@@ -11,6 +11,7 @@ FROM python:${PYTHON_VERSION}-slim as base
 
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV DOCKER_BUILDKIT=1 
 
 # Keeps Python from buffering stdout and stderr to avoid situations where
 # the application crashes without emitting any logs due to buffering.
@@ -46,6 +47,9 @@ COPY . .
 
 # Expose the port that the application listens on.
 EXPOSE 8080
+
+# Build Docker
+
 
 # Run the application.
 CMD uvicorn 'src.main:api' --host=0.0.0.0 --port=8080
