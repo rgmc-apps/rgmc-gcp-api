@@ -33,7 +33,7 @@ def index():
 def check_db():
     try:
         with mssql_engine.connect() as connection:
-            result = connection.execute("SELECT 1")
+            result = connection.execute("SELECT * from sbic_prod.dbo.Company").fetchall()
             logger.info("Database connection successful")
             return {"database_status": "connected", "result": [row[0] for row in result]}
     except Exception as e:
