@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from src import __version__
+from src.config import __version__
 from src.logger import logger
 from src.types_py import HealthcheckResponse
 
