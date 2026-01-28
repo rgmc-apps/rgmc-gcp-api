@@ -1,7 +1,7 @@
 import os
 import sqlalchemy
-import config
-import mappings
+import src.config as config
+import src.mappings as mappings
 from urllib.parse import quote_plus
 from google.cloud.sql.connector import Connector
 
@@ -21,7 +21,7 @@ class DbConn(object):
                 driver="pytds",
                 user=config.mssql_user,
                 password=config.mssql_password,
-                db=config.mssql_database,
+                db=self.__db_name,
             )
             return conn
 

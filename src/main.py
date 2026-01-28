@@ -1,18 +1,16 @@
 import os
 import time
-import routers
-import db.dbconn as dbconn
 import pandas_gbq
-import config
-# import __version__
-from logger import logger
-from typing import Any, Callable
+import src.config as config
+import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
-from routers import healthrouter
+from typing import Any, Callable
+from src.logger import logger
+from src.routers import healthrouter
 
 try:
     api = FastAPI(title=f"RGMC API: ", version=config.__version__)
-    mssql_engine = dbconn(logger, 'sbic').main()
+    mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
 except Exception as e:
     logger.error(f"Error initializing FastAPI: {e}")
