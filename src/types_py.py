@@ -13,7 +13,6 @@ class TokenData(BaseModel):
     email: Optional[EmailStr] = None
     id: Optional[UUID4] = None
 
-
 class HealthcheckResponse(BaseModel):
     message: StrictStr
     version: StrictStr
