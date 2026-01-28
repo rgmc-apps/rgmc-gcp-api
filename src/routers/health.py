@@ -4,12 +4,12 @@ from fastapi import APIRouter
 
 from src import __version__
 from src.logger import logger
-from src.types import HealthcheckResponse
+from src.types_py import HealthcheckResponse
 
-router = APIRouter()
+healthrouter = APIRouter()
 
 
-@router.get("/healthcheck", response_model=HealthcheckResponse, tags=["health"])
+@healthrouter.get("/healthcheck", response_model=HealthcheckResponse, tags=["health"])
 def healthcheck() -> HealthcheckResponse:
     message = "We're on the air."
     time = datetime.now()

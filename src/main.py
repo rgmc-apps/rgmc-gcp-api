@@ -1,11 +1,22 @@
 import os
 import time
-from src.logger import logger
+import routers
+import db.dbconn as dbconn
+import pandas_gbq
+import config
+# import __version__
+from logger import logger
 from typing import Any, Callable
 from fastapi import FastAPI, Request
-from src import __version__, __project_id__
+from routers import healthrouter
 
-api = FastAPI(title=f"RGMC API Swagger: {__project_id__}", version=__version__)
+try:
+    api = FastAPI(title=f"RGMC API: ", version=config.__version__)
+    mssql_engine = dbconn(logger, 'sbic').main()
+    api.include_router(healthrouter)
+except Exception as e:
+    logger.error(f"Error initializing FastAPI: {e}")
+    raise e
 
 @api.middleware("http")
 async def add_process_time_header(request: Request, call_next: Callable) -> Any:
@@ -19,3 +30,30 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
 def index():
     logger.info("Index endpoint called")
     return {"status": "Api is running"}
+
+@api.get("/checkdb")
+def check_db():
+    try:
+        with mssql_engine.connect() as connection:
+            result = connection.execute("SELECT 1")
+            logger.info("Database connection successful")
+            return {"database_status": "connected", "result": [row[0] for row in result]}
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        return {"database_status": "error", "error": str(e)}
+
+@api.get("/checkBigQuery")
+def check_bigquery():
+    try:
+        query = "SELECT * FROM `{}.stg_document_ai_detail`".format(config.bigquery_dataset_id)
+                
+        df = pandas_gbq.read_gbq(
+            query,
+            project_id=config.bigquery_project_id,
+            dialect='standard'
+        )
+        logger.info(f"Fetched {len(df)} records from BigQuery.")
+        return df
+    except Exception as e:
+        logger.error(f"BigQuery connection failed: {e}")
+        return {"bigquery_status": "error", "error": str(e)}
