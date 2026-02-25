@@ -7,9 +7,10 @@ from fastapi import FastAPI, Request
 from typing import Any, Callable
 from src.logger import logger
 from src.routers import healthrouter
+from sqlalchemy import text
 
 try:
-    api = FastAPI(title=f"RGMC API: ", version=config.__version__)
+    api = FastAPI(title=f"RGMC API", version=config.__version__)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
 except Exception as e:
@@ -33,7 +34,9 @@ def index():
 def check_db():
     try:
         with mssql_engine.connect() as connection:
-            result = connection.execute("SELECT * from sbic_prod.dbo.Company").fetchall()
+            result = connection.execute(
+                text("SELECT * from sbic_prod.dbo.Company")
+            ).fetchall()
             logger.info("Database connection successful")
             return {"database_status": "connected", "result": [row[0] for row in result]}
     except Exception as e:
@@ -43,7 +46,7 @@ def check_db():
 @api.get("/checkBigQuery")
 def check_bigquery():
     try:
-        query = "SELECT * FROM `{}.stg_document_ai_detail`".format(config.bigquery_dataset_id)
+        query = "SELECT * FROM `{}.int_document_ai_detail`".format(config.bigquery_dataset_id)
                 
         df = pandas_gbq.read_gbq(
             query,
@@ -51,6 +54,7 @@ def check_bigquery():
             dialect='standard'
         )
         logger.info(f"Fetched {len(df)} records from BigQuery.")
+
         return df
     except Exception as e:
         logger.error(f"BigQuery connection failed: {e}")
