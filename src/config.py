@@ -12,3 +12,4 @@ bigquery_project_id = os.getenv("BIGQUERY_PROJECT_ID", "default_project")
 bigquery_dataset_id = os.getenv("BIGQUERY_DATASET_ID", "default_dataset")
 
 table_version = os.getenv("BQ_TABLE_VERSION", "v1")
+error_email_recipient = os.getenv("ERROR_EMAIL_RECIPIENT", "rgmc.apps@gmail.com")

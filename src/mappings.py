@@ -31,7 +31,7 @@ table_mappings = {
             'total_quantity': 'totalQuantity',
             'remark': 'remark',
         },
-        'customerpouldetail': {
+        'customerpouldetailbq': {
             'po_ref_number': 'poRefNumber',
             'customer_name': 'customerName',
             'customer_branch_name': 'customerBranchName',
@@ -57,7 +57,7 @@ table_mappings = {
 
 ignore_columns = {
     'v1': {
-        'customerpouldetail': [
+        'customerpouldetailbq': [
             'file_name',
             'page_index'
         ]
@@ -66,7 +66,7 @@ ignore_columns = {
 
 column_defaults = {
     'v1': {
-        'customerpoul_v4': {
+        'customerpoulbq': {
                 'po_date': '1900-01-01',
                 'delivery_date': '1900-01-01',
                 'cancellation_date': '1900-01-01',
@@ -80,7 +80,7 @@ column_defaults = {
                 'total_discount_percent': 0,
                 'total_quantity': 0
         },
-        'customerpouldetail_v4': {
+        'customerpouldetailbq': {
                 'po_qty': 0,
                 'unit_price': 0,
                 'unit_price_pcs': 0,
@@ -96,11 +96,11 @@ column_defaults = {
 
 required_columns = {
     'v1': {
-        'customerpoul': [
+        'customerpoulbq': [
             'po_ref_number',
             'customer_name'
         ],
-        'customerpouldetail': [
+        'customerpouldetailbq': [
             'po_ref_number',
             'customer_name', 
             'customer_sku_code'
@@ -110,7 +110,7 @@ required_columns = {
 
 date_columns = { 
     'v1': {
-        'customerpoul_v4': [
+        'customerpoulbq': [
             'po_date', 
             'delivery_date', 
             'cancellation_date'
@@ -120,7 +120,7 @@ date_columns = {
 
 original_columns = {
     'v1': {
-        'customerpoul': [
+        'customerpoulbq': [
             'po_ref_number',
             'po_ref_number_count',
             'company_name',
@@ -144,7 +144,7 @@ original_columns = {
             'total_quantity',
             'remark',
         ],
-        'customerpouldetail': [
+        'customerpouldetailbq': [
             'po_ref_number_primary',
             'customer_name',
             'customer_branch_name',
@@ -170,7 +170,7 @@ original_columns = {
 
 money_columns = {
     'v1': {
-        'customerpoul': [
+        'customerpoulbq': [
                 'unit_price',
                 'unit_price_pcs',
                 'net_price',
@@ -179,7 +179,7 @@ money_columns = {
                 'total_gross_amount',
                 'total_net_amount'
         ],
-        'customerpouldetail': [
+        'customerpouldetailbq': [
                 'unit_price',
                 'unit_price_pcs',
                 'unit_amount',

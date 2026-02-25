@@ -149,8 +149,8 @@ class BigqueryBridge(object):
         customer_po_ul_detail_bq = self.__get_bigquery_data('DocumentAIDetailBQ')
 
         self.__logger.info("Renaming columns to match MSSQL schema...")
-        customer_po_ul_bq = self.__rename_columns('customerpoul', customer_po_ul_bq)
-        customer_po_ul_detail_bq = self.__rename_columns('customerpouldetail', customer_po_ul_detail_bq)
+        customer_po_ul_bq = self.__rename_columns('customerpoulbq', customer_po_ul_bq)
+        customer_po_ul_detail_bq = self.__rename_columns('customerpouldetailbq', customer_po_ul_detail_bq)
 
         bq_inserted = False
         continue_execution = True
