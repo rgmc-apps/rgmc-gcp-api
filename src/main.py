@@ -6,14 +6,13 @@ import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
 from typing import Any, Callable
 from src.logger import logger
-from src.routers import healthrouter, customerpoul_router
+from src.routers import healthrouter
 from sqlalchemy import text
 
 try:
     api = FastAPI(title=f"RGMC API", version=config.__version__)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
-    api.include_router(customerpoul_router)
 except Exception as e:
     logger.error(f"Error initializing FastAPI: {e}")
     raise e
