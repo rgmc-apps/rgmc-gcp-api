@@ -5,7 +5,7 @@ import re
 import src.mappings as mappings
 import src.config as config
 from sqlalchemy.exc import IntegrityError
-from db.dbconn import DbConn
+from src.db.dbconn import DbConn
 from datetime import timedelta
 from sqlalchemy import text
 
