@@ -1,7 +1,8 @@
-import mappings
+"""BigQuery to MSSQL Bridge Router."""
 import pandas
 import pandas_gbq
 import re
+import src.mappings as mappings
 import src.config as config
 from sqlalchemy.exc import IntegrityError
 from db.dbconn import DbConn

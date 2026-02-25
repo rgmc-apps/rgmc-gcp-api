@@ -1,8 +1,8 @@
 """CustomerPOUL Related Queries and Functions."""
 import logging
 from google.cloud import logging as cloud_logging
-from fastapi import FastAPI, HTTPException, status, Depends, APIRouter
-from bigquery_bridge import BigqueryBridge
+from fastapi import HTTPException, status, Depends, APIRouter
+from src.routers.bigquery_bridge import BigqueryBridge
 
 # Instantiate a Cloud Logging client
 client = cloud_logging.Client()
