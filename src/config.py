@@ -11,4 +11,4 @@ mssql_instance = os.getenv("MSSQL_INSTANCE", "")
 bigquery_project_id = os.getenv("BIGQUERY_PROJECT_ID", "default_project")
 bigquery_dataset_id = os.getenv("BIGQUERY_DATASET_ID", "default_dataset")
 
-table_version = os.getenv("BQ_TABLE_VERSION", "v1")
+
