@@ -55,7 +55,7 @@ def check_bigquery():
         )
         logger.info(f"Fetched {len(df)} records from BigQuery.")
 
-        return df
+        return {"bigquery_status": "connected", "record_count": len(df), "returned_data": df.head(5).to_dict(orient='records')}
     except Exception as e:
         logger.error(f"BigQuery connection failed: {e}")
         return {"bigquery_status": "error", "error": str(e)}
