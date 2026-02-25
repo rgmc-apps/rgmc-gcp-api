@@ -15,6 +15,7 @@ def send_mail(body: str, category: str = "Info"):
     sender_email = config.mail_sender
     sender_password = config.mail_password
     recepient_emails = config.mail_recipient.split(",")  # Assuming multiple recipients are comma-separated
+    body = body.replace("\n", "<br>")  # Convert newlines to HTML line breaks
     if category.upper() == "ERROR":
         subject = f'SBIC Bigquery Bridge Notification: Error Logs'
     elif category.upper() == "INFO":
