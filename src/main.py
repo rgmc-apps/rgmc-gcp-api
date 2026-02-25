@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 try:
     revision = os.environ.get('K_REVISION', '00001')
-    api = FastAPI(title=f"RGMC API :  (Release - {revision})", version=config.__version__)
+    api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/", version=config.__version__)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
     api.include_router(customerpoul_router)
