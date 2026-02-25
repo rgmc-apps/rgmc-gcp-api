@@ -7,7 +7,7 @@ from oauthlib.uri_validate import port
 import src.config as config
 from email.message import EmailMessage
 
-def send_mail(subject: str, body: str, category: str = "Info"):
+def send_mail(body: str, category: str = "Info"):
     """Send an email."""
     # Placeholder for email sending logic
     smtp_server = config.mail_server
@@ -16,14 +16,17 @@ def send_mail(subject: str, body: str, category: str = "Info"):
     sender_password = config.mail_password
     recepient_emails = config.mail_recipient.split(",")  # Assuming multiple recipients are comma-separated
     if category.upper() == "ERROR":
-        email_header = f"SBIC Bigquery Bridge Notification: {category} - {subject}"
+        subject = f'SBIC Bigquery Bridge Notification: Error Logs'
+    elif category.upper() == "INFO":
+        subject = f'SBIC Bigquery Bridge Notification: Run Logs'
     
-
+    email_header = subject
+    
     for recipient in recepient_emails:
         msg = EmailMessage()
         msg["From"] = sender_email
         msg["To"] = recipient.strip()  # Use each recipient email
-        msg["Subject"] = f'SBIC Bigquery Bridge Notification: {category} - {subject}'
+        msg["Subject"] = subject
 
         # Plain text fallback
         msg.set_content(body)

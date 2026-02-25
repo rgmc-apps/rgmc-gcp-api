@@ -4,9 +4,10 @@ import pandas_gbq
 import re
 import src.mappings as mappings
 import src.config as config
+import src.services.send_mail as send_mail
 from sqlalchemy.exc import IntegrityError
 from src.db.dbconn import DbConn
-from datetime import timedelta
+from datetime import timedelta, datetime
 from sqlalchemy import text
 
 
@@ -18,7 +19,17 @@ class BigqueryBridge(object):
         self.__last_run_timestamp = None
         self.__last_run_timestamp_detail = None
         self.__table_version = config.table_version
+        self.__log_body = "BigQuery Bridge Execution Log: {}".format(datetime.now().isoformat())
     
+    def __log(self, message, level="info"):
+        if level == "info":
+            self.__logger.info(message)
+        elif level == "error":
+            self.__logger.error(message)
+        elif level == "warning":
+            self.__logger.warning(message)
+        self.__log_body += "\n{}: {}".format(level.upper(), message)
+        
     def __get_last_run_timestamp(self):
         """Get the last run timestamp from MSSQL table."""
         try:
@@ -29,17 +40,18 @@ class BigqueryBridge(object):
                 self.__last_run_timestamp = result.scalar()
                 if self.__last_run_timestamp:
                     self.__last_run_timestamp = self.__last_run_timestamp + timedelta(seconds=1)  # Add 1 second to avoid fetching the last record again
-                self.__logger.info(f"Last run timestamp (in UTC): {self.__last_run_timestamp}")
+                self.__log(f"Last run timestamp (in UTC): {self.__last_run_timestamp}", level="info")
                 
                 result = connection.execute(
                     text("SELECT MAX(createdAt) FROM CustomerPOULDetailBQ")
                 )
                 self.__last_run_timestamp_detail = result.scalar()
-                if self.__last_run_timestamp:
+                if self.__last_run_timestamp_detail:
                     self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
             
         except Exception as e:
-            self.__logger.error(f"Error fetching last run timestamp: {e}")
+            self.__log(f"Error fetching last run timestamp: {e}", level="error")
+            send_mail.send_mail(self.__log_body, category="ERROR")
             return {"status": "error", "message": str(e)}
         
     def __get_bigquery_data(self, table_name):
@@ -56,7 +68,7 @@ class BigqueryBridge(object):
                     project_id=config.bigquery_project_id,
                     dialect='standard',
                 )
-                self.__logger.info(f"Fetched {len(df)} records from BigQuery.")
+                self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
             elif table_name == 'DocumentAIDetailBQ':
                 query = "SELECT * FROM `{}.int_document_ai_detail`".format(config.bigquery_dataset_id)
@@ -69,10 +81,11 @@ class BigqueryBridge(object):
                     project_id=config.bigquery_project_id,
                     dialect='standard',
                 )
-                self.__logger.info(f"Fetched {len(df)} records from BigQuery.")
+                self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
         except Exception as e:
-            self.__logger.error(f"Error fetching data from BigQuery: {e}")
+            self.__log(f"Error fetching data from BigQuery: {e}", level="error")
+            send_mail.send_mail(self.__log_body, category="ERROR")
             return {"status": "error", "message": str(e)}
     
     def __rename_columns(self, table_name, df):
@@ -85,18 +98,18 @@ class BigqueryBridge(object):
         money_cols = mappings.money_columns.get(self.__table_version, {}).get(table_name, [])
 
         if not column_mapping:
-            self.__logger.warning(f"No column mapping found for table: {table_name}")
+            self.__log(f"No column mapping found for table: {table_name}", level="warning")
             return df
         
         if ignore_cols:
             df.drop(columns=ignore_cols, inplace=True)
-            self.__logger.info(f"Removed Columns for {table_name}")
+            self.__log(f"Removed Columns for {table_name}", level="info")
 
         if requirements_cols:
             len_before = len(df)
-            self.__logger.info('Removing Duplicates for table: {}'.format(table_name))
+            self.__log('Removing Duplicates for table: {}'.format(table_name), level="info")
             df.drop_duplicates(requirements_cols, keep='first', inplace=True)
-            self.__logger.info('Removed {} duplicate rows for table: {}'.format(len_before - len(df), table_name))
+            self.__log('Removed {} duplicate rows for table: {}'.format(len_before - len(df), table_name), level="info")
 
         for key, val in column_defaults.items():
             df[key] = df[key].mask(df[key].isnull(), val)
@@ -140,15 +153,15 @@ class BigqueryBridge(object):
     
     def main(self):
         """Bigquery Bridge Main Function."""
-        self.__logger.info("BigQuery to MSSQL Bridge initialized.")
+        self.__log("BigQuery to MSSQL Bridge initialized.", level="info")
         self.__get_last_run_timestamp()
-        self.__logger.info(f"Last run timestamp obtained: {self.__last_run_timestamp}")
+        self.__log(f"Last run timestamp obtained: {self.__last_run_timestamp}", level="info")
         
-        self.__logger.info("Fetching data from BigQuery...")
+        self.__log("Fetching data from BigQuery...", level="info")
         customer_po_ul_bq = self.__get_bigquery_data('DocumentAIBQ')
         customer_po_ul_detail_bq = self.__get_bigquery_data('DocumentAIDetailBQ')
 
-        self.__logger.info("Renaming columns to match MSSQL schema...")
+        self.__log("Renaming columns to match MSSQL schema...", level="info")
         customer_po_ul_bq = self.__rename_columns('customerpoulbq', customer_po_ul_bq)
         customer_po_ul_detail_bq = self.__rename_columns('customerpouldetailbq', customer_po_ul_detail_bq)
 
@@ -156,7 +169,7 @@ class BigqueryBridge(object):
         continue_execution = True
         while continue_execution:
             try:
-                self.__logger.info("Attempting to insert data into MSSQL. Total Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(len(customer_po_ul_bq), len(customer_po_ul_detail_bq)))
+                self.__log("Attempting to insert data into MSSQL. Total Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(len(customer_po_ul_bq), len(customer_po_ul_detail_bq)), level="info")
                 with self.__mssql_engine.connect() as connection:
                     ul_bq = customer_po_ul_bq.to_sql(
                         name='CustomerPOULBQ',
@@ -177,26 +190,29 @@ class BigqueryBridge(object):
                     )
 
                 continue_execution = False
-                self.__logger.info("Data inserted successfully into MSSQL.")
-                self.__logger.info("Inserted Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(ul_bq, uldetail_bq))
+                self.__log("Data inserted successfully into MSSQL.", level="info")
+                self.__log("Inserted Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(ul_bq, uldetail_bq), level="info")
             except IntegrityError as ie:
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
                 if duplicate_keys:
                     if not bq_inserted:
                         requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
-                        self.__logger.warning(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.")
+                        self.__log(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
                         customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
                     else:
                         requirements_cols = mappings.required_columns[self.__table_version].get('customerpouldetailbq', [])
-                        self.__logger.warning(f"Duplicate entries found in CustomerPOULDetailBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.")
+                        self.__log(f"Duplicate entries found in CustomerPOULDetailBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
                         customer_po_ul_detail_bq = customer_po_ul_detail_bq[customer_po_ul_detail_bq['poRefNumber'] != duplicate_keys[0]]
                 else:
-                    self.__logger.error(f"IntegrityError encountered: {ie}")
+                    self.__log(f"IntegrityError encountered: {ie}", level="error")
+                    send_mail.send_mail(self.__log_body, category="ERROR")
                     return {"status": "error", "message": str(ie)}
             except Exception as e:
-                self.__logger.error(f"Error inserting data into MSSQL: {e}")
+                self.__log(f"Error inserting data into MSSQL: {e}", level="error")
+                send_mail.send_mail(self.__log_body, category="ERROR")
                 return {"status": "error", "message": str(e)}
-            
+        
+        send_mail.send_mail(self.__log_body, category="INFO")
         return {
             "status": "success", 
             "message": "Data transfer from BigQuery to MSSQL completed successfully.", 
