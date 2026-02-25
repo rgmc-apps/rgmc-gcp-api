@@ -197,4 +197,8 @@ class BigqueryBridge(object):
                 self.__logger.error(f"Error inserting data into MSSQL: {e}")
                 return {"status": "error", "message": str(e)}
             
-        return {"status": "success", "message": "Data transfer from BigQuery to MSSQL completed successfully."}
+        return {
+            "status": "success", 
+            "message": "Data transfer from BigQuery to MSSQL completed successfully.", 
+            "details": {"customerpoulbq_records": len(customer_po_ul_bq), 
+                        "customerpouldetailbq_records": len(customer_po_ul_detail_bq)}}
