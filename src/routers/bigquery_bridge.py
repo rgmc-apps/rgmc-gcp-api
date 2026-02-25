@@ -183,11 +183,13 @@ class BigqueryBridge(object):
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
                 if duplicate_keys:
                     if not bq_inserted:
-                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpoul', [])
-                        self.__logger.warning(f"Duplicate entries found in CustomerPOUL ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.")
+                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
+                        self.__logger.warning(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.")
+                        customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
                     else:
-                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpouldetail', [])
+                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpouldetailbq', [])
                         self.__logger.warning(f"Duplicate entries found in CustomerPOULDetailBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.")
+                        customer_po_ul_detail_bq = customer_po_ul_detail_bq[customer_po_ul_detail_bq['poRefNumber'] != duplicate_keys[0]]
                 else:
                     self.__logger.error(f"IntegrityError encountered: {ie}")
                     return {"status": "error", "message": str(ie)}
