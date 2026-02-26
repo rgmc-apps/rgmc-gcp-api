@@ -10,7 +10,7 @@ from src.routers import healthrouter, customerpoul_router
 from sqlalchemy import text
 
 try:
-    revision = os.environ.get('K_REVISION', '00001')
+    revision = config.revision_code
     api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/", version=config.__version__)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)

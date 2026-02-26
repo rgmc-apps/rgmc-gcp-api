@@ -17,3 +17,6 @@ mail_sender = os.getenv("MAIL_SENDER", "rgmc.apps@gmail.com")
 mail_password = os.getenv("MAIL_PASSWORD", "password")
 mail_port = int(os.getenv("MAIL_PORT", "587"))
 mail_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+
+pass_key = os.getenv("PASS_KEY", "default_pass_key")
+revision_code = os.environ.get('K_REVISION', '00001')
