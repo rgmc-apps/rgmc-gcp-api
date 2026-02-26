@@ -173,6 +173,13 @@ class BigqueryBridge(object):
             try:
                 self.__log("Attempting to insert data into MSSQL. Total Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(len(customer_po_ul_bq), len(customer_po_ul_detail_bq)), level="info")
                 with self.__mssql_engine.connect() as connection:
+                    uldetail_bq = customer_po_ul_detail_bq.to_sql(
+                        name='CustomerPOULDetailBQ',
+                        con=connection,
+                        if_exists='append',
+                        index=False
+                    )
+                    bq_inserted = True
                     ul_bq = customer_po_ul_bq.to_sql(
                         name='CustomerPOULBQ',
                         con=connection,
@@ -182,22 +189,13 @@ class BigqueryBridge(object):
                         chunksize=100,
                         method='multi'
                     )
-                    bq_inserted = True
-                    
-                    uldetail_bq = customer_po_ul_detail_bq.to_sql(
-                        name='CustomerPOULDetailBQ',
-                        con=connection,
-                        if_exists='append',
-                        index=False
-                    )
-
                 continue_execution = False
                 self.__log("Data inserted successfully into MSSQL.", level="info")
                 self.__log("Inserted Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(ul_bq, uldetail_bq), level="info")
             except IntegrityError as ie:
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
                 if duplicate_keys:
-                    if not bq_inserted:
+                    if bq_inserted:
                         requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
                         self.__log(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
                         customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
