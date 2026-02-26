@@ -7,7 +7,7 @@ from oauthlib.uri_validate import port
 import src.config as config
 from email.message import EmailMessage
 
-def send_mail(body: str, category: str = "Info"):
+def send_mail(body: str, category: str = "Info", method: str = "manual"):
     """Send an email."""
     # Placeholder for email sending logic
     smtp_server = config.mail_server
@@ -16,10 +16,15 @@ def send_mail(body: str, category: str = "Info"):
     sender_password = config.mail_password
     recepient_emails = config.mail_recipient.split(",")  # Assuming multiple recipients are comma-separated
     body = body.replace("\n", "<br>")  # Convert newlines to HTML line breaks
+    if method.lower() == "scheduled":
+        method = "Scheduled Run"
+    elif method.lower() == "manual":
+        method = "Manual Run"
+
     if category.upper() == "ERROR":
-        subject = f'SBIC Bigquery Bridge Notification: Error Logs'
+        subject = f'SBIC Bigquery Bridge Notification: Error Logs - {method}'
     elif category.upper() == "INFO":
-        subject = f'SBIC Bigquery Bridge Notification: Run Logs'
+        subject = f'SBIC Bigquery Bridge Notification: Run Logs - {method}'
     
     email_header = subject
     

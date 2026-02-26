@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 
 class BigqueryBridge(object):
-    def __init__(self, logger):
+    def __init__(self, logger, method="manual"):
         self.__dbconn = DbConn(logger, 'sbic')
         self.__mssql_engine = self.__dbconn.main()
         self.__logger = logger
