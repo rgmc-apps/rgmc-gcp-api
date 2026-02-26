@@ -19,7 +19,8 @@ class BigqueryBridge(object):
         self.__last_run_timestamp = None
         self.__last_run_timestamp_detail = None
         self.__table_version = config.table_version
-        self.__log_body = "BigQuery Bridge Execution Log: {}".format(datetime.now().isoformat())
+        self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(datetime.now().isoformat(), self.__method)
+        self.__method = method
     
     def __log(self, message, level="info"):
         if level == "info":
@@ -51,7 +52,7 @@ class BigqueryBridge(object):
             
         except Exception as e:
             self.__log(f"Error fetching last run timestamp: {e}", level="error")
-            send_mail.send_mail(self.__log_body, category="ERROR")
+            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
             return {"status": "error", "message": str(e)}
         
     def __get_bigquery_data(self, table_name):
@@ -85,7 +86,7 @@ class BigqueryBridge(object):
                 return df
         except Exception as e:
             self.__log(f"Error fetching data from BigQuery: {e}", level="error")
-            send_mail.send_mail(self.__log_body, category="ERROR")
+            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
             return {"status": "error", "message": str(e)}
     
     def __rename_columns(self, table_name, df):
@@ -205,14 +206,14 @@ class BigqueryBridge(object):
                         customer_po_ul_detail_bq = customer_po_ul_detail_bq[customer_po_ul_detail_bq['poRefNumber'] != duplicate_keys[0]]
                 else:
                     self.__log(f"IntegrityError encountered: {ie}", level="error")
-                    send_mail.send_mail(self.__log_body, category="ERROR")
+                    send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
                     return {"status": "error", "message": str(ie)}
             except Exception as e:
                 self.__log(f"Error inserting data into MSSQL: {e}", level="error")
-                send_mail.send_mail(self.__log_body, category="ERROR")
+                send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
                 return {"status": "error", "message": str(e)}
         
-        send_mail.send_mail(self.__log_body, category="INFO")
+        send_mail.send_mail(self.__log_body, category="INFO", method=self.__method)
         return {
             "status": "success", 
             "message": "Data transfer from BigQuery to MSSQL completed successfully.", 
