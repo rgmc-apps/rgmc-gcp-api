@@ -19,8 +19,9 @@ class BigqueryBridge(object):
         self.__last_run_timestamp = None
         self.__last_run_timestamp_detail = None
         self.__table_version = config.table_version
-        self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(datetime.now().isoformat(), self.__method)
         self.__method = method
+        self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(datetime.now().isoformat(), self.__method)
+        
     
     def __log(self, message, level="info"):
         if level == "info":
