@@ -1,7 +1,7 @@
 """CustomerPOUL Related Queries and Functions."""
 import logging
 from google.cloud import logging as cloud_logging
-from fastapi import HTTPException, status, Depends, APIRouter
+from fastapi import HTTPException, Query, status, Depends, APIRouter
 from src.routers.bigquery_bridge import BigqueryBridge
 
 # Instantiate a Cloud Logging client
@@ -13,7 +13,7 @@ logger = logging.getLogger('customerpoul')
 customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
 
 @customerpoul_router.post("/runbridge/method/{method}")
-async def run_bigquery_bridge(method: str):
+async def run_bigquery_bridge(method: str = Query(default="manual")):
     try:
         bridge = BigqueryBridge(logger, method)
         result = bridge.main()
