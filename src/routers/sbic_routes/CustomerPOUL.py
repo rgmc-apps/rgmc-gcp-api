@@ -12,7 +12,7 @@ logger = logging.getLogger('customerpoul')
 
 customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
 
-@customerpoul_router.post("/runbridge/method/{method}")
+@customerpoul_router.post("/runbridge/method/")
 async def run_bigquery_bridge(method: str = 'manual'):
     try:
         bridge = BigqueryBridge(logger, method)

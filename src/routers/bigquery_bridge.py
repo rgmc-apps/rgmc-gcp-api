@@ -195,14 +195,15 @@ class BigqueryBridge(object):
             except IntegrityError as ie:
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
                 if duplicate_keys:
-                    if bq_inserted:
-                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
-                        self.__log(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
-                        customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
-                    else:
+                    if not bq_inserted:
                         requirements_cols = mappings.required_columns[self.__table_version].get('customerpouldetailbq', [])
                         self.__log(f"Duplicate entries found in CustomerPOULDetailBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
                         customer_po_ul_detail_bq = customer_po_ul_detail_bq[customer_po_ul_detail_bq['poRefNumber'] != duplicate_keys[0]]
+                    else:
+                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
+                        self.__log(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
+                        customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
+                        
                 else:
                     self.__log(f"IntegrityError encountered: {ie}", level="error")
                     send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
