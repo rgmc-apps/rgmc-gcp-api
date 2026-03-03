@@ -167,10 +167,10 @@ class BigqueryBridge(object):
         customer_po_ul_bq = self.__rename_columns('customerpoulbq', customer_po_ul_bq)
         customer_po_ul_detail_bq = self.__rename_columns('customerpouldetailbq', customer_po_ul_detail_bq)
 
-        bq_inserted = False
         continue_execution = True
         while continue_execution:
             try:
+                bq_inserted = False
                 self.__log("Attempting to insert data into MSSQL. Total Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(len(customer_po_ul_bq), len(customer_po_ul_detail_bq)), level="info")
                 with self.__mssql_engine.connect() as connection:
                     uldetail_bq = customer_po_ul_detail_bq.to_sql(
