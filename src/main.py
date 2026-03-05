@@ -9,9 +9,28 @@ from src.logger import logger
 from src.routers import healthrouter, customerpoul_router, customer_ra_router
 from sqlalchemy import text
 
+tags_metadata = [
+    {
+        "name": "CustomerPOUL",
+        "description": "SBIC Purchasing Order Upload (POUL) related queries and functions.",
+        "externalDocs": {
+            "description": "SBIC PO Uploader",
+            "url": "https://po-uploader-935246372408.us-central1.run.app/",
+        },
+    },
+    {
+        "name": "CustomerRA",
+        "description": "SBIC Customer Remittance Advice related queries and functions.",
+        "externalDocs": {
+            "description": "SBIC Customer RA Uploader",
+            "url": "https://ra-uploader-935246372408.us-central1.run.app/",
+        },
+    },
+]
+
 try:
     revision = config.revision_code
-    api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/", version=config.__version__)
+    api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/", version=config.__version__, openapi_tags=tags_metadata)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
     api.include_router(customerpoul_router)

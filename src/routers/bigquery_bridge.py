@@ -7,11 +7,6 @@ import src.config as config
 import src.services.send_mail as send_mail
 from src.db.dbconn import DbConn
 
-# import src.mappings as mappings
-# import src.config as config
-# import src.services.send_mail as send_mail
-# from db.dbconn import DbConn
-
 from sqlalchemy.exc import IntegrityError
 from datetime import timedelta, datetime
 from sqlalchemy import text
