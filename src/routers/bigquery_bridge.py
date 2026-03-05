@@ -5,14 +5,20 @@ import re
 import src.mappings as mappings
 import src.config as config
 import src.services.send_mail as send_mail
-from sqlalchemy.exc import IntegrityError
 from src.db.dbconn import DbConn
+
+# import src.mappings as mappings
+# import src.config as config
+# import src.services.send_mail as send_mail
+# from db.dbconn import DbConn
+
+from sqlalchemy.exc import IntegrityError
 from datetime import timedelta, datetime
 from sqlalchemy import text
 
 
 class BigqueryBridge(object):
-    def __init__(self, logger, method="manual"):
+    def __init__(self, logger, method="manual", group_code='customerpoul'):
         self.__dbconn = DbConn(logger, 'sbic')
         self.__mssql_engine = self.__dbconn.main()
         self.__logger = logger
@@ -21,6 +27,7 @@ class BigqueryBridge(object):
         self.__table_version = config.table_version
         self.__method = method
         self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(self.__method, datetime.now().isoformat())
+        self.__group_code = group_code
         
     
     def __log(self, message, level="info"):
@@ -36,24 +43,42 @@ class BigqueryBridge(object):
         """Get the last run timestamp from MSSQL table."""
         try:
             with self.__mssql_engine.connect() as connection:
-                result = connection.execute(
-                    text("SELECT MAX(createdAt) FROM CustomerPOULBQ")
-                )
-                self.__last_run_timestamp = result.scalar()
-                if self.__last_run_timestamp:
-                    self.__last_run_timestamp = self.__last_run_timestamp + timedelta(seconds=1)  # Add 1 second to avoid fetching the last record again
-                self.__log(f"Last run timestamp (in UTC): {self.__last_run_timestamp}", level="info")
-                
-                result = connection.execute(
-                    text("SELECT MAX(createdAt) FROM CustomerPOULDetailBQ")
-                )
-                self.__last_run_timestamp_detail = result.scalar()
-                if self.__last_run_timestamp_detail:
-                    self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
+                if self.__group_code == 'customerpoul':
+                    result = connection.execute(
+                        text("SELECT MAX(createdAt) FROM CustomerPOULBQ")
+                    )
+                    self.__last_run_timestamp = result.scalar()
+                    if self.__last_run_timestamp:
+                        self.__last_run_timestamp = self.__last_run_timestamp + timedelta(seconds=1)  # Add 1 second to avoid fetching the last record again
+                    self.__log(f"Last run timestamp (in UTC): {self.__last_run_timestamp}", level="info")
+                    
+                    result = connection.execute(
+                        text("SELECT MAX(createdAt) FROM CustomerPOULDetailBQ")
+                    )
+                    self.__last_run_timestamp_detail = result.scalar()
+                    if self.__last_run_timestamp_detail:
+                        self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
+                elif self.__group_code == 'customerra':
+                    result = connection.execute(
+                        text("SELECT MAX(createdAt) FROM CustomerRABQ")
+                    )
+                    self.__last_run_timestamp = result.scalar()
+
+                    if self.__last_run_timestamp:
+                        self.__last_run_timestamp = self.__last_run_timestamp + timedelta(seconds=1)
+                    self.__log(f"Last run timestamp for CustomerRA (in UTC): {self.__last_run_timestamp}", level="info")\
+                    
+                    result = connection.execute(
+                        text("SELECT MAX(createdAt) FROM customerRADetailBQ")
+                    )
+                    self.__last_run_timestamp_detail = result.scalar()
+
+                    if self.__last_run_timestamp_detail:
+                        self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
             
         except Exception as e:
             self.__log(f"Error fetching last run timestamp: {e}", level="error")
-            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
+            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
             return {"status": "error", "message": str(e)}
         
     def __get_bigquery_data(self, table_name):
@@ -85,13 +110,41 @@ class BigqueryBridge(object):
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
+                
+            elif table_name == 'document_ai_ra':
+                query = "SELECT * FROM `{}.int_document_ai_ra`".format(config.bigquery_dataset_id)
+
+                if self.__last_run_timestamp:
+                    query += f" WHERE created_at  > '{self.__last_run_timestamp}'"
+
+                df = pandas_gbq.read_gbq(
+                    query,
+                    project_id=config.bigquery_project_id,
+                    dialect='standard',
+                )
+                self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
+                return df
+            elif table_name == 'document_ai_ra_detail':
+                query = "SELECT * FROM `{}.int_document_ai_ra_detail`".format(config.bigquery_dataset_id)
+
+                if self.__last_run_timestamp_detail:
+                    query += f" WHERE created_at  > '{self.__last_run_timestamp_detail}'"
+
+                df = pandas_gbq.read_gbq(
+                    query,
+                    project_id=config.bigquery_project_id,
+                    dialect='standard',
+                )
+                self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
+                return df
         except Exception as e:
             self.__log(f"Error fetching data from BigQuery: {e}", level="error")
-            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
+            send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
             return {"status": "error", "message": str(e)}
     
     def __rename_columns(self, table_name, df):
         """Rename columns based on the mapping."""
+        table_name = table_name.lower()
         column_mapping = mappings.table_mappings[self.__table_version].get(table_name, {})
         ignore_cols = mappings.ignore_columns.get(self.__table_version, {}).get(table_name, [])
         column_defaults = mappings.column_defaults.get(self.__table_version, {}).get(table_name, {})
@@ -160,28 +213,40 @@ class BigqueryBridge(object):
         self.__log(f"Last run timestamp obtained: {self.__last_run_timestamp}", level="info")
         
         self.__log("Fetching data from BigQuery...", level="info")
-        customer_po_ul_bq = self.__get_bigquery_data('DocumentAIBQ')
-        customer_po_ul_detail_bq = self.__get_bigquery_data('DocumentAIDetailBQ')
+        variable_mapping = mappings.variable_mappings[self.__table_version].get(self.__group_code, {})
+
+        bq_header_table_name = variable_mapping.get('bq_header_name', 'DocumentAIBQ')
+        bq_detail_table_name = variable_mapping.get('bq_detail_name', 'DocumentAIDetailBQ')
+        mssql_header_table_name = variable_mapping.get('mssql_header_name', 'CustomerPOULBQ')
+        mssql_detail_table_name = variable_mapping.get('mssql_detail_name', 'CustomerPOULDetailBQ')
+        main_key = variable_mapping.get('main_key', 'poRefNumber')
+
+        header_table = self.__get_bigquery_data(bq_header_table_name)
+        detail_table = self.__get_bigquery_data(bq_detail_table_name)
 
         self.__log("Renaming columns to match MSSQL schema...", level="info")
-        customer_po_ul_bq = self.__rename_columns('customerpoulbq', customer_po_ul_bq)
-        customer_po_ul_detail_bq = self.__rename_columns('customerpouldetailbq', customer_po_ul_detail_bq)
+        header_table = self.__rename_columns(mssql_header_table_name.lower(), header_table)
+        detail_table = self.__rename_columns(mssql_detail_table_name.lower(), detail_table)
 
         continue_execution = True
         while continue_execution:
             try:
                 bq_inserted = False
-                self.__log("Attempting to insert data into MSSQL. Total Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(len(customer_po_ul_bq), len(customer_po_ul_detail_bq)), level="info")
+                self.__log("Attempting to insert data into MSSQL. Total Records - {}: {}, {}: {}".format(mssql_header_table_name,
+                                                                                                         len(header_table), 
+                                                                                                         mssql_detail_table_name, 
+                                                                                                         len(detail_table)), 
+                                                                                                         level="info")
                 with self.__mssql_engine.connect() as connection:
-                    uldetail_bq = customer_po_ul_detail_bq.to_sql(
-                        name='CustomerPOULDetailBQ',
+                    uldetail_bq = detail_table.to_sql(
+                        name=mssql_detail_table_name,
                         con=connection,
                         if_exists='append',
                         index=False
                     )
                     bq_inserted = True
-                    ul_bq = customer_po_ul_bq.to_sql(
-                        name='CustomerPOULBQ',
+                    ul_bq = header_table.to_sql(
+                        name=mssql_header_table_name,
                         con=connection,
                         if_exists='append',
                         schema='dbo',
@@ -191,31 +256,44 @@ class BigqueryBridge(object):
                     )
                 continue_execution = False
                 self.__log("Data inserted successfully into MSSQL.", level="info")
-                self.__log("Inserted Records - CustomerPOULBQ: {}, CustomerPOULDetailBQ: {}".format(ul_bq, uldetail_bq), level="info")
+                self.__log("Inserted Records - {}: {}, {}: {}".format(mssql_header_table_name, 
+                                                                      ul_bq, 
+                                                                      mssql_detail_table_name, 
+                                                                      uldetail_bq), 
+                                                                      level="info")
             except IntegrityError as ie:
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
                 if duplicate_keys:
                     if not bq_inserted:
-                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpouldetailbq', [])
-                        self.__log(f"Duplicate entries found in CustomerPOULDetailBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
-                        customer_po_ul_detail_bq = customer_po_ul_detail_bq[customer_po_ul_detail_bq['poRefNumber'] != duplicate_keys[0]]
+                        requirements_cols = mappings.required_columns[self.__table_version].get(mssql_detail_table_name.lower(), [])
+                        self.__log(f"Duplicate entries found in {mssql_detail_table_name} ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
+                        detail_table = detail_table[detail_table[main_key] != duplicate_keys[0]]
                     else:
-                        requirements_cols = mappings.required_columns[self.__table_version].get('customerpoulbq', [])
-                        self.__log(f"Duplicate entries found in CustomerPOULBQ ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
-                        customer_po_ul_bq = customer_po_ul_bq[customer_po_ul_bq['poRefNumber'] != duplicate_keys[0]]
-                        
+                        requirements_cols = mappings.required_columns[self.__table_version].get(mssql_header_table_name.lower(), [])
+                        self.__log(f"Duplicate entries found in {mssql_header_table_name} ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
+                        header_table = header_table[header_table[main_key] != duplicate_keys[0]]
                 else:
                     self.__log(f"IntegrityError encountered: {ie}", level="error")
-                    send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
+                    send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
                     return {"status": "error", "message": str(ie)}
             except Exception as e:
                 self.__log(f"Error inserting data into MSSQL: {e}", level="error")
-                send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method)
+                send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
                 return {"status": "error", "message": str(e)}
         
-        send_mail.send_mail(self.__log_body, category="INFO", method=self.__method)
+        send_mail.send_mail(self.__log_body, category="INFO", method=self.__method, module=self.__group_code)
         return {
             "status": "success", 
             "message": "Data transfer from BigQuery to MSSQL completed successfully.", 
-            "details": {"customerpoulbq_records": len(customer_po_ul_bq), 
-                        "customerpouldetailbq_records": len(customer_po_ul_detail_bq)}}
+            "details": {"header_records": len(header_table), 
+                        "detail_records": len(detail_table)}}
+
+if __name__ == "__main__":
+    # For local testing
+    import logging
+    from src.test_logger import LogHandler
+    LogHandler('BigQueryBridge')
+    logger = logging.getLogger('BigQueryBridge')
+    bridge = BigqueryBridge(logger, method='manual', group_code='customerra')
+    result = bridge.main()
+    print(result)
