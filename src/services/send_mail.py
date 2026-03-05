@@ -5,9 +5,10 @@ import ssl
 
 from oauthlib.uri_validate import port
 import src.config as config
+import src.mappings as mappings
 from email.message import EmailMessage
 
-def send_mail(body: str, category: str = "Info", method: str = "manual"):
+def send_mail(body: str, category: str = "Info", method: str = "manual", module: str = "CustomerPOUL"):
     """Send an email."""
     # Placeholder for email sending logic
     smtp_server = config.mail_server
@@ -16,16 +17,17 @@ def send_mail(body: str, category: str = "Info", method: str = "manual"):
     sender_password = config.mail_password
     recepient_emails = config.mail_recipient.split(",")  # Assuming multiple recipients are comma-separated
     body = body.replace("\n", "<br>")  # Convert newlines to HTML line breaks
+    module_desc = mappings.module_mappings.get(module, module)
     if method.lower() == "scheduled":
         method = "Scheduled Run"
     elif method.lower() == "manual":
         method = "Manual Run"
 
     if category.upper() == "ERROR":
-        subject = f'SBIC Bigquery Bridge Notification: Error Logs - {method}'
+        subject = f'SBIC Bigquery Bridge Notification ({module_desc}): Error Logs - {method}'
     elif category.upper() == "INFO":
-        subject = f'SBIC Bigquery Bridge Notification: Run Logs - {method}'
-    
+        subject = f'SBIC Bigquery Bridge Notification ({module_desc}): Run Logs - {method}'
+
     email_header = subject
     
     for recipient in recepient_emails:
@@ -46,14 +48,14 @@ def send_mail(body: str, category: str = "Info", method: str = "manual"):
                 
                 <!-- Header -->
                 <tr>
-                    <td style="background-color:#4CAF50;padding:20px;text-align:center;color:white;font-size:24px;font-weight:bold;">
+                    <td style="background-color:#4CAF50;padding:20px;text-align:center;color:white;font-size:20px;font-weight:bold;">
                         {email_header}
                     </td>
                 </tr>
 
                 <!-- Content -->
                 <tr>
-                    <td style="padding:30px;color:#333333;font-size:16px;line-height:1.6;">
+                    <td style="padding:30px;color:#333333;font-size:16px;line-height:1.6;font-family:'Courier New', monospace;">
                         {body}
                     </td>
                 </tr>

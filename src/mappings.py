@@ -52,6 +52,37 @@ table_mappings = {
             'discount_percent': 'discountPercent',
             'created_at' : 'createdAt',
         },
+        'customerrabq': {
+            'ra_ref_number': 'raRefNumber',
+            'customer_name': 'customerName',
+            'payee': 'payee',
+            'ra_date': 'raDate',
+            'ra_amount': 'raAmount',
+            'bank_name': 'bankName',
+            'voucher_number': 'voucherNumber',
+            'is_multi_page': 'isMultiPage',
+            'created_at': 'createdAt',
+            'file_name': 'fileName',
+        },
+        'customerradetailbq': {
+            'ra_ref_number': 'raRefNumber',
+            'customer_name': 'customerName',
+            'payee': 'payee',
+            'ra_date': 'raDate',
+            'line_index': 'lineIndex',
+            'page_index': 'pageIndex',
+            'ra_amount_detail': 'raAmountDetail',
+            'gross_amount_detail': 'grossAmountDetail',
+            'net_amount_detail': 'netAmountDetail',
+            'discount_detail': 'discountDetail',
+            'source_detail': 'sourceDetail',
+            'doc_ref_number_detail': 'docRefNumberDetail',
+            'doc_description_detail': 'docDescriptionDetail',
+            'apv_number_detail': 'apvNumberDetail',
+            'type_code_detail': 'typeCodeDetail',
+            'created_at': 'createdAt',
+            'file_name': 'fileName',
+        }
     }
 }
 
@@ -60,6 +91,9 @@ ignore_columns = {
         'customerpouldetailbq': [
             'file_name',
             'page_index'
+        ],
+        'customerradetailbq': [
+            'md5_hash'
         ]
     }
 }
@@ -90,6 +124,29 @@ column_defaults = {
                 'customer_sku_desc': '',
                 'customer_branch_name': '',
                 'customer_sku_code': ''
+        },
+        'customerrabq': {
+                'payee': '',
+                'bank_name': '',
+                'voucher_number': '',
+                'is_multi_page': False,
+                'ra_amount': 0,
+                'ra_date': '1900-01-01'
+        },
+        'customerradetailbq': {
+                'ra_ref_number': '',
+                'customer_name': '',
+                'payee': '',
+                'ra_amount_detail': 0,
+                'gross_amount_detail': 0,
+                'net_amount_detail': 0,
+                'discount_detail': 0,
+                'source_detail': '',
+                'doc_ref_number_detail': '',
+                'doc_description_detail': '',
+                'apv_number_detail': '',
+                'type_code_detail': '',
+                'ra_date': '1900-01-01'
         }
     }
 }
@@ -104,6 +161,15 @@ required_columns = {
             'po_ref_number',
             'customer_name', 
             'customer_sku_code'
+        ],
+        'customerra': [
+            'ra_ref_number',
+            'customer_name'
+        ],
+        'customerradetailbq': [
+            'ra_ref_number',
+            'customer_name',
+            'doc_ref_number_detail'
         ]
     }
 }
@@ -189,3 +255,27 @@ money_columns = {
         ]
     }
 }
+
+variable_mappings = {
+    'v1': {
+        'customerpoul': {
+            'bq_header_name': 'DocumentAIBQ',
+            'bq_detail_name': 'DocumentAIDetailBQ',
+            'mssql_header_name': 'CustomerPOULBQ',
+            'mssql_detail_name': 'CustomerPOULDetailBQ',
+            'main_key': 'poRefNumber'
+        },
+        'customerra': {
+            'bq_header_name': 'document_ai_ra',
+            'bq_detail_name': 'document_ai_ra_detail',
+            'mssql_header_name': 'CustomerRABQ',
+            'mssql_detail_name': 'CustomerRADetailBQ',
+            'main_key': 'raRefNumber'
+        }
+    }
+}
+
+module_mappings = {
+        'customerpoul': 'Customer Purchase Order',
+        'customerra': 'Customer Remittance Advice'
+    }

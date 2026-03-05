@@ -1,21 +1,23 @@
-"""CustomerPOUL Related Queries and Functions."""
+"""Customer Remittance Advice (RA)."""
+
 import logging
 from google.cloud import logging as cloud_logging
 from fastapi import HTTPException, Query, status, Depends, APIRouter
 from src.routers.bigquery_bridge import BigqueryBridge
 
+
 # Instantiate a Cloud Logging client
 client = cloud_logging.Client()
 client.setup_logging() 
 
-logger = logging.getLogger('customerpoul')
+logger = logging.getLogger('customer_ra')
 
-customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
+customer_ra_router = APIRouter(prefix="/customerra", tags=["CustomerRA"])
 
-@customerpoul_router.post("/runbridge/method/")
-async def run_customerpoul_bridge(method: str = 'manual'):
+@customer_ra_router.post("/runbridge/method/")
+async def run_remittance_advice_bridge(method: str = 'manual'):
     try:
-        bridge = BigqueryBridge(logger, method, group_code='customerpoul')
+        bridge = BigqueryBridge(logger, method, group_code='customerra')
         result = bridge.main()
         return result
     except Exception as e:
