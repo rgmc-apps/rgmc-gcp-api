@@ -1,4 +1,4 @@
-from src.config import PASS_KEY
+from src.config import pass_key as PASS_KEY
 
 def rotate_right(value):
     for _ in range(2):

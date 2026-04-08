@@ -36,5 +36,4 @@ class DbConn(object):
 
     def main(self):
         engine = self.get_mssql_engine()
-        return engine
-    
+        return engine    

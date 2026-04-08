@@ -50,6 +50,7 @@ class LogHandler(object):
         if issubclass(type, KeyboardInterrupt):
             sys.__excephook__(exc_type, exc_value, exc_tb)
             return
+        
         self.__logger.error("Uncaught exception", exc_info=(exc_type,
                                                             exc_value,
                                                             exc_tb))

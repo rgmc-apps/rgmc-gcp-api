@@ -55,7 +55,7 @@ def send_mail(body: str, category: str = "Info", method: str = "manual", module:
 
                 <!-- Content -->
                 <tr>
-                    <td style="padding:30px;color:#333333;font-size:16px;line-height:1.6;font-family:'Courier New', monospace;">
+                    <td style="padding:30px;color:#333333;font-size:14px;line-height:1.6;font-family:'Courier New', monospace;">
                         {body}
                     </td>
                 </tr>

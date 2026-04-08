@@ -234,14 +234,14 @@ class BigqueryBridge(object):
                                                                                                          level="info")
                 with self.__mssql_engine.connect() as connection:
                     uldetail_bq = detail_table.to_sql(
-                        name=mssql_detail_table_name,
+                        name='xcustomerRADetailBQ',
                         con=connection,
                         if_exists='append',
                         index=False
                     )
                     bq_inserted = True
                     ul_bq = header_table.to_sql(
-                        name=mssql_header_table_name,
+                        name='xcustomerRABQ',
                         con=connection,
                         if_exists='append',
                         schema='dbo',
@@ -282,6 +282,7 @@ class BigqueryBridge(object):
             "message": "Data transfer from BigQuery to MSSQL completed successfully.", 
             "details": {"header_records": len(header_table), 
                         "detail_records": len(detail_table)}}
+
 
 if __name__ == "__main__":
     # For local testing
