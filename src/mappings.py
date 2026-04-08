@@ -279,3 +279,10 @@ module_mappings = {
         'customerpoul': 'Customer Purchase Order',
         'customerra': 'Customer Remittance Advice'
     }
+
+bigquery_dataset_mappings = {
+    'v1': {
+        'customerpoul': 'sbic_int',
+        'customerra': 'sbic_marts'
+    }
+}

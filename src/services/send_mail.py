@@ -22,6 +22,8 @@ def send_mail(body: str, category: str = "Info", method: str = "manual", module:
         method = "Scheduled Run"
     elif method.lower() == "manual":
         method = "Manual Run"
+    elif method.lower() == "triggered":
+        method = "Triggered Run"
 
     if category.upper() == "ERROR":
         subject = f'SBIC Bigquery Bridge Notification ({module_desc}): Error Logs - {method}'

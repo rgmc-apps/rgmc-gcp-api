@@ -23,6 +23,8 @@ class BigqueryBridge(object):
         self.__method = method
         self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(self.__method, datetime.now().isoformat())
         self.__group_code = group_code
+        self.__dataset_id = "{}.{}".format(config.bigquery_project_id,
+            mappings.bigquery_dataset_mappings[self.__table_version].get(group_code, 'sbic_int'))
         
     
     def __log(self, message, level="info"):
@@ -107,7 +109,7 @@ class BigqueryBridge(object):
                 return df
                 
             elif table_name == 'document_ai_ra':
-                query = "SELECT * FROM `{}.int_document_ai_ra`".format(config.bigquery_dataset_id)
+                query = "SELECT * FROM `{}.marts_document_ai_ra`".format(self.__dataset_id)
 
                 if self.__last_run_timestamp:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp}'"
@@ -120,7 +122,7 @@ class BigqueryBridge(object):
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
             elif table_name == 'document_ai_ra_detail':
-                query = "SELECT * FROM `{}.int_document_ai_ra_detail`".format(config.bigquery_dataset_id)
+                query = "SELECT * FROM `{}.marts_document_ai_ra_detail`".format(self.__dataset_id)
 
                 if self.__last_run_timestamp_detail:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp_detail}'"
