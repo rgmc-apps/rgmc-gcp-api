@@ -147,6 +147,15 @@ column_defaults = {
                 'apv_number_detail': '',
                 'type_code_detail': '',
                 'ra_date': '1900-01-01'
+        },
+        'onlinesalespo': {
+                'poDate': '1900-01-01',
+                'customerName': '',
+                'customerSKUCode': '',
+                'unitPrice': 0,
+                'netPrice': 0,
+                'unitAmount': 0,
+                'netAmount': 0
         }
     }
 }
@@ -170,6 +179,11 @@ required_columns = {
             'ra_ref_number',
             'customer_name',
             'doc_ref_number_detail'
+        ],
+        'onlinesalespo': [
+            'poRefNumber',
+            'customerName',
+            'customerSKUCode'
         ]
     }
 }
@@ -180,7 +194,10 @@ date_columns = {
             'po_date', 
             'delivery_date', 
             'cancellation_date'
-        ]
+        ],
+        'onlinesalespo': [
+            'poDate'
+        ],
     }
 }
 
@@ -252,6 +269,13 @@ money_columns = {
                 'net_amount',
                 'net_price',
                 'net_price_pcs'
+        ],
+        'onlinesalespo': [
+                'unitPrice',
+                'netPrice',
+                'unitAmount',
+                'netAmount',
+                'netPrice'
         ]
     }
 }
@@ -271,18 +295,27 @@ variable_mappings = {
             'mssql_header_name': 'CustomerRABQ',
             'mssql_detail_name': 'CustomerRADetailBQ',
             'main_key': 'raRefNumber'
+        },
+        'onlinesalespo': {
+            'bq_header_name': 'int_online_sales_data',
+            'bq_detail_name': 'int_online_sales_data',
+            'mssql_header_name': 'CustomerPOULBQ',
+            'mssql_detail_name': 'CustomerPOULDetailBQ',
+            'main_key': 'poRefNumber'
         }
     }
 }
 
 module_mappings = {
         'customerpoul': 'Customer Purchase Order',
-        'customerra': 'Customer Remittance Advice'
+        'customerra': 'Customer Remittance Advice',
+        'onlinesalespo': 'Online Sales Purchase Order'
     }
 
 bigquery_dataset_mappings = {
     'v1': {
         'customerpoul': 'sbic_int',
-        'customerra': 'sbic_marts'
+        'customerra': 'sbic_marts',
+        'onlinesalespo': 'sbic_int'
     }
 }

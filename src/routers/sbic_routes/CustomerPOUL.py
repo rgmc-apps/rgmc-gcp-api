@@ -21,3 +21,14 @@ async def run_customerpoul_bridge(method: str = 'manual'):
     except Exception as e:
         logger.error(f"Error running BigQuery bridge: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@customerpoul_router.post("/runbridge/onlinesalespo/method/")
+async def run_online_sales_po_bridge(method: str = 'manual'):
+    try:
+        bridge = BigqueryBridge(logger, method, group_code='onlinesalespo')
+        result = bridge.main()
+        return result
+    except Exception as e:
+        logger.error(f"Error running BigQuery bridge: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
