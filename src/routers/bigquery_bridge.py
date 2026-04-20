@@ -137,8 +137,8 @@ class BigqueryBridge(object):
             elif table_name == 'int_online_sales_data':
                 query = "SELECT * FROM `{}.int_online_sales_data`".format(self.__dataset_id)
 
-                # if self.__last_run_timestamp:
-                #     query += f" WHERE created_at  > '{self.__last_run_timestamp}'"
+                if self.__last_run_timestamp:
+                    query += f" WHERE createdAt  > '{self.__last_run_timestamp}'"
 
                 df = pandas_gbq.read_gbq(
                     query,
