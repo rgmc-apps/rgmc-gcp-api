@@ -330,6 +330,7 @@ class BigqueryBridge(object):
                         name=mssql_detail_table_name,
                         con=connection,
                         if_exists='append',
+                        chunksize=50,
                         index=False
                     )
                     bq_inserted = True
@@ -339,7 +340,7 @@ class BigqueryBridge(object):
                         if_exists='append',
                         schema='dbo',
                         index=False,
-                        chunksize=100,
+                        chunksize=50,
                         method='multi'
                     )
                 continue_execution = False
