@@ -125,6 +125,7 @@ column_defaults = {
                 'customer_sku_desc': '',
                 'customer_branch_name': '',
                 'customer_sku_code': ''
+                
         },
         'customerrabq': {
                 'payee': '',
@@ -147,7 +148,8 @@ column_defaults = {
                 'doc_description_detail': '',
                 'apv_number_detail': '',
                 'type_code_detail': '',
-                'ra_date': '1900-01-01'
+                'ra_date': '1900-01-01',
+                'particulars_detail': ''
         },
         'onlinesalespo': {
                 'poDate': '1900-01-01',
