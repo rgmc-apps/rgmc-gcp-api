@@ -79,6 +79,7 @@ table_mappings = {
             'doc_description_detail': 'docDescriptionDetail',
             'apv_number_detail': 'apvNumberDetail',
             'type_code_detail': 'typeCodeDetail',
+            'particulars_detail': 'particularDetail',
             'created_at': 'createdAt',
             'file_name': 'fileName',
         }
@@ -138,7 +139,6 @@ column_defaults = {
                 'payee': '',
                 'ra_amount_detail': 0,
                 'gross_amount_detail': 0,
-                'net_amount_detail': 0,
                 'discount_detail': 0,
                 'source_detail': '',
                 'doc_ref_number_detail': '',
