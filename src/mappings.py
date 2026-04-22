@@ -132,7 +132,8 @@ column_defaults = {
                 'voucher_number': '',
                 'is_multi_page': False,
                 'ra_amount': 0,
-                'ra_date': '1900-01-01'
+                'ra_date': '1900-01-01',
+                'payment_date': '1900-01-01'
         },
         'customerradetailbq': {
                 'ra_ref_number': '',
