@@ -17,8 +17,8 @@ customer_ra_router = APIRouter(prefix="/customerra", tags=["CustomerRA"])
 @customer_ra_router.post("/runbridge/")
 async def run_remittance_advice_bridge(method: str = 'manual', passkey: str = Query(..., description="Passkey for authentication")):
     try:
-        if passkey != pass_key:  # Replace with actual passkey validation logic
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
+        # if passkey != pass_key:  # Replace with actual passkey validation logic
+        #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
         bridge = BigqueryBridge(logger, method, group_code='customerra')
         result = bridge.main()
         return result
