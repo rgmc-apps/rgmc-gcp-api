@@ -174,7 +174,7 @@ required_columns = {
             'customer_name', 
             'customer_sku_code'
         ],
-        'customerra': [
+        'customerrabq': [
             'ra_ref_number',
             'customer_name'
         ],
