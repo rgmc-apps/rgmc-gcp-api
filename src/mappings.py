@@ -181,7 +181,8 @@ required_columns = {
         'customerradetailbq': [
             'ra_ref_number',
             'customer_name',
-            'doc_ref_number_detail'
+            'doc_ref_number_detail',
+            'source_detail'
         ],
         'onlinesalespo': [
             'poRefNumber',
