@@ -1,3 +1,3 @@
 """Models Init."""
 
-from sbic_models import Company
+from .sbic_models import Company
