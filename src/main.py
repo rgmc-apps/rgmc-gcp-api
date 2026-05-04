@@ -6,7 +6,7 @@ import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
 from typing import Any, Callable
 from src.logger import logger
-from src.routers import healthrouter, customerpoul_router, customer_ra_router
+from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router
 from sqlalchemy import text
 
 tags_metadata = [
@@ -26,6 +26,10 @@ tags_metadata = [
             "url": "https://ra-uploader-935246372408.us-central1.run.app/",
         },
     },
+    {
+        "name": "Trade Portal",
+        "description": "Trade Portal database read endpoints — brands, categories, colors, companies, customers, locations, products, SKUs, packing lists, pull outs, markdowns, and system tables.",
+    },
 ]
 
 try:
@@ -35,6 +39,7 @@ try:
     api.include_router(healthrouter)
     api.include_router(customerpoul_router)
     api.include_router(customer_ra_router)
+    api.include_router(tradeportal_router)
 except Exception as e:
     logger.error(f"Error initializing FastAPI: {e}")
     raise e

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s -H \"Authorization: token $\\(git config --get github.token || echo ''\\)\" https://api.github.com/repos/rgmc-apps/trade_portal_db/contents/)"
+    ]
+  }
+}
