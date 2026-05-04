@@ -1,5 +1,6 @@
 """Trade Portal Routes."""
 from fastapi import APIRouter
+from .auth_routes import auth_router
 from .brand_routes import brand_router
 from .category_routes import category_router
 from .color_routes import color_router
@@ -14,6 +15,7 @@ from .markdown_routes import markdown_router
 from .system_routes import system_router
 
 tradeportal_router = APIRouter(prefix="/tradeportal")
+tradeportal_router.include_router(auth_router)
 tradeportal_router.include_router(brand_router)
 tradeportal_router.include_router(category_router)
 tradeportal_router.include_router(color_router)
