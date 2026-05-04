@@ -36,11 +36,10 @@ def _extract_table_name(payload: dict) -> str:
 async def run_handoff_bridge(
     request: Request,
     method: str = 'manual',
-    passkey: str = Query(..., description="Passkey for authentication"),
 ):
     try:
-        if passkey != pass_key:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
+        # if passkey != pass_key:
+        #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
 
         group_code = 'customerpoul'  # default for manual calls
 
