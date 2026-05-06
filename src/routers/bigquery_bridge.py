@@ -299,6 +299,7 @@ class BigqueryBridge(object):
         variable_mapping = mappings.variable_mappings[self.__table_version].get(self.__group_code, {})
         bq_header_table_name = variable_mapping.get('bq_header_name', 'DocumentAIBQ')
         bq_detail_table_name = variable_mapping.get('bq_detail_name', 'DocumentAIDetailBQ')
+
         mssql_header_table_name = variable_mapping.get('mssql_header_name', 'CustomerPOULBQ')
         mssql_detail_table_name = variable_mapping.get('mssql_detail_name', 'CustomerPOULDetailBQ')
         main_key = variable_mapping.get('main_key', 'poRefNumber')
@@ -311,6 +312,10 @@ class BigqueryBridge(object):
             self.__log("Processing data from online sales bigquery table...", level="info")
             bq_table = self.__get_bigquery_data('int_online_sales_data')
             header_table, detail_table = self.__format_onlinesalespo_data(bq_table)
+
+        if header_table is None and detail_table is None:
+            self.__log("No data fetched from BigQuery. Exiting process.", level="info")
+            return {"status": "success", "message": "No new data to process."}
 
         self.__log("Renaming columns to match MSSQL schema...", level="info")
         header_table = self.__rename_columns(mssql_header_table_name.lower(), header_table)
