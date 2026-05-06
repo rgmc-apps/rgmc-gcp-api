@@ -2,9 +2,10 @@
 
 import base64, json, logging
 from google.cloud import logging as cloud_logging
-from fastapi import HTTPException, Query, Request, status, APIRouter
+from fastapi import HTTPException, Query, Request, status, APIRouter, Depends
 from src.routers.bigquery_bridge import BigqueryBridge
 from src.config import pass_key
+from src.routers.sbic_routes.rate_limiter import rate_limit
 
 # Instantiate a Cloud Logging client
 client = cloud_logging.Client()
@@ -14,7 +15,7 @@ logger = logging.getLogger('handoff')
 
 handoff_router = APIRouter(prefix="/handoff", tags=["SBICHandoff"])
 
-@handoff_router.post("/runbridge/")
+@handoff_router.post("/runbridge/", dependencies=[Depends(rate_limit)])
 async def run_handoff_bridge(
     request: Request,
     method: str = 'manual',

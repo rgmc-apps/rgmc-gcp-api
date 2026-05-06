@@ -38,7 +38,7 @@ tags_metadata = [
 
 try:
     revision = config.revision_code
-    api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/", version=config.__version__, openapi_tags=tags_metadata)
+    api = FastAPI(title=f"RGMC API :  (Release - {revision})", docs_url="/swagger", version=config.__version__, openapi_tags=tags_metadata)
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
     api.include_router(customerpoul_router)
