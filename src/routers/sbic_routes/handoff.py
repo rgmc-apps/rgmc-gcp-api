@@ -18,12 +18,12 @@ handoff_router = APIRouter(prefix="/handoff", tags=["SBICHandoff"])
 async def run_handoff_bridge(
     request: Request,
     method: str = 'manual',
-    group_code: str = Query(None, description="Optional group code to determine which BigQuery bridge to run. If not provided, it will be inferred from the payload.")
+    groupcode: str = Query(None, description="Optional group code to determine which BigQuery bridge to run. If not provided, it will be inferred from the payload.")
 ):
     try:
-        if group_code is None:
-            group_code = 'customerpoul'  # Default group code if not provided
-        bridge = BigqueryBridge(logger, method, group_code=group_code)
+        if groupcode is None:
+            groupcode = 'customerpoul'  # Default group code if not provided
+        bridge = BigqueryBridge(logger, method, group_code=groupcode)
         result = bridge.main()
         return result
     except HTTPException:
