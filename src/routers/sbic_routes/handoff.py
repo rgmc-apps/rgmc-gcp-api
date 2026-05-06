@@ -20,33 +20,70 @@ _TABLE_GROUP_MAP = {
 }
 
 
-def _extract_table_name(payload: dict) -> str:
-    """Pull the BQ table name from an Eventarc Cloud Audit Log CloudEvent payload.
+def _table_from_resource_name(resource_name: str) -> str:
+    """Extract table ID from a resourceName that contains /tables/TABLE."""
+    if '/tables/' in resource_name:
+        return resource_name.split('/tables/')[-1]
+    return ''
 
-    Handles three delivery shapes Eventarc may use:
-      1. Structured mode  — body is full CloudEvent; audit log is under payload['data']
-      2. Binary mode      — body IS the LogEntry directly; protoPayload at top level
-      3. Base64 data      — payload['data'] is a base64 string wrapping the LogEntry
+
+def _table_from_service_data(proto: dict) -> str:
+    """For JobService.InsertJob the destination table is inside serviceData, not resourceName."""
+    sd = proto.get('serviceData', {})
+    # jobInsertion (job creation event)
+    job = (
+        sd.get('jobInsertResponse', {}).get('resource', {})
+        or sd.get('jobCompletedEvent', {}).get('job', {})
+    )
+    cfg = job.get('jobConfiguration', {})
+    dest = (
+        cfg.get('query', {}).get('destinationTable', {})
+        or cfg.get('load', {}).get('destinationTable', {})
+    )
+    return dest.get('tableId', '')
+
+
+def _extract_table_name(payload: dict) -> tuple[str, str]:
+    """Return (table_name, source_path) from an Eventarc Cloud Audit Log payload.
+
+    Tries every known delivery shape:
+      1. Structured CloudEvent  — audit log under payload['data']
+      2. Base64 CloudEvent      — payload['data'] is a base64-encoded LogEntry
+      3. Binary / direct        — LogEntry at top level (protoPayload at root)
+    For JobService.InsertJob the table is inside serviceData, not resourceName.
     """
-    # Shape 1 & 3: CloudEvent envelope with 'data' field
+    # resolve the LogEntry dict regardless of delivery shape
+    log_entry = None
+
     data = payload.get('data')
     if isinstance(data, str):
-        # base64-encoded LogEntry — decode first
         try:
             data = json.loads(base64.b64decode(data).decode('utf-8'))
         except Exception:
             data = {}
-    if isinstance(data, dict):
-        resource_name = data.get('protoPayload', {}).get('resourceName', '')
-        if resource_name:
-            return resource_name.split('/tables/')[-1] if '/tables/' in resource_name else ''
+    if isinstance(data, dict) and 'protoPayload' in data:
+        log_entry = data                          # Shape 1 or 2
+    elif 'protoPayload' in payload:
+        log_entry = payload                       # Shape 3
 
-    # Shape 2: body is the LogEntry directly
-    resource_name = payload.get('protoPayload', {}).get('resourceName', '')
-    if resource_name:
-        return resource_name.split('/tables/')[-1] if '/tables/' in resource_name else ''
+    if not log_entry:
+        return '', 'no_log_entry'
 
-    return ''
+    proto = log_entry.get('protoPayload', {})
+    if not isinstance(proto, dict):
+        return '', 'protoPayload_not_dict'
+
+    # Try resourceName first (works for TableDataService.InsertAll)
+    table = _table_from_resource_name(proto.get('resourceName', ''))
+    if table:
+        return table, 'resourceName'
+
+    # Fallback: dig into serviceData (works for JobService.InsertJob)
+    table = _table_from_service_data(proto)
+    if table:
+        return table, 'serviceData'
+
+    return '', 'not_found'
 
 
 @handoff_router.post("/runbridge/")
@@ -62,8 +99,8 @@ async def run_handoff_bridge(
                 payload = await request.json()
                 logger.info(f"[handoff] raw payload keys: {list(payload.keys())}")
 
-                table_name = _extract_table_name(payload)
-                logger.info(f"[handoff] extracted table_name='{table_name}'")
+                table_name, source = _extract_table_name(payload)
+                logger.info(f"[handoff] extracted table_name='{table_name}' via '{source}'")
 
                 mapped = _TABLE_GROUP_MAP.get(table_name)
                 if not mapped:
