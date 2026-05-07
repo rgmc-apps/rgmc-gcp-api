@@ -15,9 +15,8 @@ logger = logging.getLogger('handoff')
 
 handoff_router = APIRouter(prefix="/handoff", tags=["SBICHandoff"])
 
-@handoff_router.post("/runbridge/", dependencies=[Depends(rate_limit)])
+@handoff_router.post("/runbridge/")
 async def run_handoff_bridge(
-    request: Request,
     method: str = 'manual',
     groupcode: str = Query(None, description="Optional group code to determine which BigQuery bridge to run. If not provided, it will be inferred from the payload.")
 ):
@@ -27,8 +26,6 @@ async def run_handoff_bridge(
         bridge = BigqueryBridge(logger, method, group_code=groupcode)
         result = bridge.main()
         return result
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"[handoff] error running BigQuery bridge: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
