@@ -15,10 +15,8 @@ logger = logging.getLogger('customerpoul')
 customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
 
 @customerpoul_router.post("/runbridge/", dependencies=[Depends(rate_limit)])
-async def run_customerpoul_bridge(request: Request, method: str = 'manual', passkey: str = Query(..., description="Passkey for authentication")):
+async def run_customerpoul_bridge(request: Request, method: str = 'manual'):
     try:
-        if passkey != pass_key:  # Replace with actual passkey validation logic
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
         bridge = BigqueryBridge(logger, method, group_code='customerpoul')
         result = bridge.main()
         return result
