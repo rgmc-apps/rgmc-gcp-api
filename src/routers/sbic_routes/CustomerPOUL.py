@@ -14,7 +14,7 @@ logger = logging.getLogger('customerpoul')
 
 customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
 
-@customerpoul_router.post("/runbridge/", dependencies=[Depends(rate_limit)])
+@customerpoul_router.post("/runbridge/")
 async def run_customerpoul_bridge(request: Request, method: str = 'manual'):
     try:
         bridge = BigqueryBridge(logger, method, group_code='customerpoul')
@@ -25,7 +25,7 @@ async def run_customerpoul_bridge(request: Request, method: str = 'manual'):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@customerpoul_router.post("/runbridge/onlinesalespo/", dependencies=[Depends(rate_limit)])
+@customerpoul_router.post("/runbridge/onlinesalespo/")
 async def run_online_sales_po_bridge(request: Request, method: str = 'manual'):
     try:
         bridge = BigqueryBridge(logger, method, group_code='onlinesalespo')
