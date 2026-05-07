@@ -31,7 +31,7 @@ tags_metadata = [
         "description": "Trade Portal database read endpoints — brands, categories, colors, companies, customers, locations, products, SKUs, packing lists, pull outs, markdowns, and system tables.",
     },
     {
-        "name": "Handoff",
+        "name": "SBICHandoff",
         "description": "SBIC Handoff related queries and functions.",
     }
 ]
