@@ -323,3 +323,14 @@ bigquery_dataset_mappings = {
         'onlinesalespo': 'sbic_int'
     }
 }
+
+bc_environment_mappings = {
+    'production': 'Production',
+    'sandbox': 'Sandbox',
+    'UAT': 'UAT'
+}
+
+bc_company_mappings = {
+    'CGI': 'CGI'
+}
+

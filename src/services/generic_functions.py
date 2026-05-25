@@ -1,3 +1,4 @@
+import requests
 from src.config import pass_key as PASS_KEY
 
 def rotate_right(value):

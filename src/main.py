@@ -6,7 +6,7 @@ import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
 from typing import Any, Callable
 from src.logger import logger
-from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router
+from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router
 from sqlalchemy import text
 
 tags_metadata = [
@@ -33,7 +33,39 @@ tags_metadata = [
     {
         "name": "SBICHandoff",
         "description": "SBIC Handoff related queries and functions.",
-    }
+    },
+    {
+        "name": "Business Central",
+        "description": "Business Central data endpoints — brands (dimension values), contacts, and customers.",
+    },
+    {
+        "name": "BC Sales Orders",
+        "description": "Business Central Sales Order CRUD endpoints.",
+    },
+    {
+        "name": "BC Items",
+        "description": "Business Central Item CRUD endpoints.",
+    },
+    {
+        "name": "BC Customers",
+        "description": "Business Central Customer CRUD endpoints.",
+    },
+    {
+        "name": "BC Sales Credit Memos",
+        "description": "Business Central Sales Credit Memo CRUD endpoints (sales return equivalent).",
+    },
+    {
+        "name": "BC RGMC Retail Customers",
+        "description": "RGMC custom API — Retail Customer CRUD endpoints (Pag50200, api/rgmc/rgmccustom/v1.0).",
+    },
+    {
+        "name": "BC RGMC Sales Return Orders",
+        "description": "RGMC custom API — Sales Return Order and Lines CRUD endpoints (Pag50201/Pag50202, api/rgmc/rgmccustom/v1.0).",
+    },
+    {
+        "name": "BC RGMC Contacts",
+        "description": "RGMC custom API — Contact CRUD endpoints (Pag50203, api/rgmc/rgmccustom/v1.0).",
+    },
 ]
 
 try:
@@ -45,6 +77,14 @@ try:
     api.include_router(customer_ra_router)
     api.include_router(tradeportal_router)
     api.include_router(handoff_router)
+    api.include_router(bc_router)
+    api.include_router(sales_order_router)
+    api.include_router(item_router)
+    api.include_router(customer_router)
+    api.include_router(sales_credit_memo_router)
+    api.include_router(retail_customer_router)
+    api.include_router(sales_return_order_router)
+    api.include_router(rgmc_contact_router)
 except Exception as e:
     logger.error(f"Error initializing FastAPI: {e}")
     raise e
@@ -78,7 +118,7 @@ def check_db():
 @api.get("/checkBigQuery")
 def check_bigquery():
     try:
-        query = "SELECT * FROM `{}.int_document_ai_detail`".format(config.bigquery_dataset_id)
+        query = "SELECT * FROM `{}.int_document_ai_detail` LIMIT 10".format(config.bigquery_dataset_id)
                 
         df = pandas_gbq.read_gbq(
             query,
