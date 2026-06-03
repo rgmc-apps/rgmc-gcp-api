@@ -194,41 +194,20 @@ def _safe_json(response) -> Any:
 
 
 def rgmc_get_contact_picture(contact_id: str, company_name: str = None):
-    """GET picture metadata for a contact (returns JSON value array)."""
+    """GET contactPictures({contact_id}) — returns {id, contactNo, picture} where picture is base64."""
     company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture"
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contactPictures({contact_id})"
     response = requests.get(url, headers=_auth_headers())
     return response.status_code, _safe_json(response)
 
 
-def rgmc_get_contact_picture_content(contact_id: str, picture_id: str, company_name: str = None):
-    """GET binary image bytes for a contact picture. Returns (status, bytes, content_type)."""
+def rgmc_update_contact_picture(contact_id: str, picture_base64: str, company_name: str = None):
+    """PATCH contactPictures({contact_id}) with a base64-encoded image string. Insert/Delete not allowed by AL."""
     company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})/content"
-    headers = {**_auth_headers(), "Accept": "image/*"}
-    response = requests.get(url, headers=headers)
-    return response.status_code, response.content, response.headers.get("Content-Type", "image/jpeg")
-
-
-def rgmc_update_contact_picture(contact_id: str, picture_id: str, image_bytes: bytes, content_type: str, company_name: str = None):
-    """PATCH binary image data onto a contact picture record."""
-    company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})"
-    headers = {
-        "Authorization": f"Bearer {get_access_token()}",
-        "Content-Type": content_type,
-        "If-Match": "*",
-    }
-    response = requests.patch(url, data=image_bytes, headers=headers)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contactPictures({contact_id})"
+    headers = {**_auth_headers(), "Content-Type": "application/json", "If-Match": "*"}
+    response = requests.patch(url, json={"picture": picture_base64}, headers=headers)
     return response.status_code, _safe_json(response)
-
-
-def rgmc_delete_contact_picture(contact_id: str, picture_id: str, company_name: str = None):
-    """DELETE a contact picture from RGMC custom API."""
-    company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})"
-    response = requests.delete(url, headers=_auth_headers())
-    return response.status_code
 
 
 def get_dimension_values_by_code(dimension_code: str, company_name: str = None):

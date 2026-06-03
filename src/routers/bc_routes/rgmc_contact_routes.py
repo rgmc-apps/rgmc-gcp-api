@@ -1,4 +1,5 @@
 """RGMC custom API — Contact endpoints (Pag50203)."""
+import base64
 import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
@@ -10,7 +11,6 @@ from src.services.bc_functions import (
     rgmc_update_record,
     rgmc_delete_record,
     rgmc_get_contact_picture,
-    rgmc_get_contact_picture_content,
     rgmc_update_contact_picture,
 )
 from src.models.bc_models import RgmcContactCreate, RgmcContactUpdate
@@ -109,40 +109,25 @@ def update_rgmc_contact(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-def _extract_picture_id(meta_data: Any) -> Optional[str]:
-    """
-    BC picture metadata can arrive in three shapes:
-      1. OData collection: {"value": [{"id": "...", ...}]}
-      2. Single object:    {"id": "...", ...}
-      3. Unexpected/non-dict — returns None
-    """
-    if not isinstance(meta_data, dict):
-        logger.warning(f"Unexpected picture metadata type {type(meta_data)}: {str(meta_data)[:200]}")
-        return None
-    value = meta_data.get("value")
-    if isinstance(value, list) and value and isinstance(value[0], dict):
-        return value[0].get("id")
-    if "id" in meta_data:
-        return meta_data["id"]
-    return None
-
-
 @rgmc_contact_router.get("/{contact_id}/picture", summary="Get RGMC Contact Picture")
 def get_contact_picture(
     contact_id: str,
     company: Optional[str] = Query(None, description="Override company name"),
 ):
+    """Fetches contactPictures({contact_id}) and returns the decoded binary image.
+    The AL page (50204) exposes id, contactNo, picture (base64 of Rec.Image)."""
     try:
-        meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
-        if meta_status != 200:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {meta_status}: {meta_data}")
-        picture_id = _extract_picture_id(meta_data)
-        if not picture_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture found")
-        img_status, img_bytes, content_type = rgmc_get_contact_picture_content(contact_id, picture_id, company_name=company)
-        if img_status != 200 or not img_bytes:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Picture content not available")
-        return Response(content=img_bytes, media_type=content_type)
+        http_status, data = rgmc_get_contact_picture(contact_id, company_name=company)
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact picture not found")
+        if http_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}: {data}")
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Unexpected response shape from Business Central: {str(data)[:200]}")
+        picture_b64 = data.get("picture") or ""
+        if not picture_b64:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture data on this contact record")
+        return Response(content=base64.b64decode(picture_b64), media_type="image/jpeg")
     except HTTPException:
         raise
     except Exception as e:
@@ -156,18 +141,12 @@ async def update_contact_picture(
     file: UploadFile = File(...),
     company: Optional[str] = Query(None, description="Override company name"),
 ):
+    """Encodes the uploaded file as base64 and PATCHes contactPictures({contact_id}).
+    Insert and Delete are not allowed by the AL page definition (50204)."""
     try:
-        meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
-        if meta_status != 200:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {meta_status}: {meta_data}")
-        picture_id = _extract_picture_id(meta_data)
-        if not picture_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture record found for contact")
         image_bytes = await file.read()
-        content_type = file.content_type or "image/jpeg"
-        upd_status, upd_data = rgmc_update_contact_picture(
-            contact_id, picture_id, image_bytes, content_type, company_name=company
-        )
+        picture_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        upd_status, upd_data = rgmc_update_contact_picture(contact_id, picture_b64, company_name=company)
         if upd_status not in (200, 204):
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"BC returned {upd_status}: {upd_data}")
         return {"ok": True}

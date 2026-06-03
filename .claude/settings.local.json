@@ -5,7 +5,8 @@
       "WebFetch(domain:github.com)",
       "Bash(curl -s -H \"Authorization: token $\\(git config --get github.token || echo ''\\)\" https://api.github.com/repos/rgmc-apps/trade_portal_db/contents/)",
       "WebFetch(domain:community.dynamics.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(Remove-Item *)"
     ]
   }
 }
