@@ -8,3 +8,4 @@ from .retail_customer_routes import retail_customer_router
 from .sales_return_order_routes import sales_return_order_router
 from .rgmc_contact_routes import rgmc_contact_router
 from .item_category_routes import item_category_router
+from .contact_picture_routes import contact_picture_router

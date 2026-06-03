@@ -182,6 +182,44 @@ def rgmc_delete_record(table_endpoint: str, record_id: str, company_name: str = 
     return response.status_code
 
 
+def rgmc_get_contact_picture(contact_id: str, company_name: str = None):
+    """GET picture metadata for a contact (returns JSON value array)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture"
+    response = requests.get(url, headers=_auth_headers())
+    return response.status_code, response.json() if response.content else {}
+
+
+def rgmc_get_contact_picture_content(contact_id: str, picture_id: str, company_name: str = None):
+    """GET binary image bytes for a contact picture. Returns (status, bytes, content_type)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})/content"
+    headers = {**_auth_headers(), "Accept": "image/*"}
+    response = requests.get(url, headers=headers)
+    return response.status_code, response.content, response.headers.get("Content-Type", "image/jpeg")
+
+
+def rgmc_update_contact_picture(contact_id: str, picture_id: str, image_bytes: bytes, content_type: str, company_name: str = None):
+    """PATCH binary image data onto a contact picture record."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})"
+    headers = {
+        "Authorization": f"Bearer {get_access_token()}",
+        "Content-Type": content_type,
+        "If-Match": "*",
+    }
+    response = requests.patch(url, data=image_bytes, headers=headers)
+    return response.status_code, response.json() if response.content else {}
+
+
+def rgmc_delete_contact_picture(contact_id: str, picture_id: str, company_name: str = None):
+    """DELETE a contact picture from RGMC custom API."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture({picture_id})"
+    response = requests.delete(url, headers=_auth_headers())
+    return response.status_code
+
+
 def get_dimension_values_by_code(dimension_code: str, company_name: str = None):
     """Return all dimension values for the given dimension code (e.g. 'BRAND').
 
