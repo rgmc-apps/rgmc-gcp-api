@@ -1,6 +1,7 @@
 """All Business Central API related functions."""
 import time
 import threading
+from typing import Any
 import requests
 from src.config import BC_CLIENT_ID, BC_TENANT_ID, BC_CLIENT_SECRET, BC_SCOPE, BC_AUTH_URL, BC_ENVIRONMENT, BC_COMPANY
 
@@ -182,12 +183,22 @@ def rgmc_delete_record(table_endpoint: str, record_id: str, company_name: str = 
     return response.status_code
 
 
+def _safe_json(response) -> Any:
+    """Parse response body as JSON; fall back to raw text on decode failure."""
+    if not response.content:
+        return {}
+    try:
+        return response.json()
+    except Exception:
+        return response.text
+
+
 def rgmc_get_contact_picture(contact_id: str, company_name: str = None):
     """GET picture metadata for a contact (returns JSON value array)."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/picture"
     response = requests.get(url, headers=_auth_headers())
-    return response.status_code, response.json() if response.content else {}
+    return response.status_code, _safe_json(response)
 
 
 def rgmc_get_contact_picture_content(contact_id: str, picture_id: str, company_name: str = None):
@@ -209,7 +220,7 @@ def rgmc_update_contact_picture(contact_id: str, picture_id: str, image_bytes: b
         "If-Match": "*",
     }
     response = requests.patch(url, data=image_bytes, headers=headers)
-    return response.status_code, response.json() if response.content else {}
+    return response.status_code, _safe_json(response)
 
 
 def rgmc_delete_contact_picture(contact_id: str, picture_id: str, company_name: str = None):

@@ -15,7 +15,11 @@ logger = logging.getLogger("bc_routes.contact_pictures")
 contact_picture_router = APIRouter(prefix="/bc/custom/contacts", tags=["BC RGMC Contact Pictures"])
 
 
-@contact_picture_router.get("/{contact_id}/picture", summary="Get Contact Picture Metadata")
+@contact_picture_router.get(
+    "/{contact_id}/picture",
+    summary="Get Contact Picture Metadata",
+    operation_id="contact_picture_get_metadata",
+)
 def get_contact_picture(
     contact_id: str,
     company: Optional[str] = Query(None, description="Override company name"),
@@ -29,7 +33,9 @@ def get_contact_picture(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Business Central returned {http_status}: {data}",
             )
-        return {"data": data.get("value", data)}
+        if isinstance(data, dict):
+            return {"data": data.get("value", data)}
+        return {"data": data}
     except HTTPException:
         raise
     except Exception as e:
@@ -37,7 +43,11 @@ def get_contact_picture(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@contact_picture_router.get("/{contact_id}/picture/{picture_id}/content", summary="Get Contact Picture Content")
+@contact_picture_router.get(
+    "/{contact_id}/picture/{picture_id}/content",
+    summary="Get Contact Picture Content",
+    operation_id="contact_picture_get_content",
+)
 def get_contact_picture_content(
     contact_id: str,
     picture_id: str,
@@ -62,7 +72,11 @@ def get_contact_picture_content(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@contact_picture_router.patch("/{contact_id}/picture/{picture_id}", summary="Upload / Replace Contact Picture")
+@contact_picture_router.patch(
+    "/{contact_id}/picture/{picture_id}",
+    summary="Upload / Replace Contact Picture",
+    operation_id="contact_picture_update",
+)
 async def update_contact_picture(
     contact_id: str,
     picture_id: str,
@@ -94,6 +108,7 @@ async def update_contact_picture(
     "/{contact_id}/picture/{picture_id}",
     summary="Delete Contact Picture",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="contact_picture_delete",
 )
 def delete_contact_picture(
     contact_id: str,
