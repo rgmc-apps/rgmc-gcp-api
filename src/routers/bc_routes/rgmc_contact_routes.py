@@ -1,13 +1,17 @@
 """RGMC custom API — Contact endpoints (Pag50203)."""
 import logging
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from src.services.bc_functions import (
     call_rgmc_table,
     rgmc_get_record,
     rgmc_create_record,
     rgmc_update_record,
     rgmc_delete_record,
+    rgmc_get_contact_picture,
+    rgmc_get_contact_picture_content,
+    rgmc_update_contact_picture,
 )
 from src.models.bc_models import RgmcContactCreate, RgmcContactUpdate
 
@@ -102,6 +106,55 @@ def update_rgmc_contact(
         raise
     except Exception as e:
         logger.error(f"Error updating RGMC contact {contact_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@rgmc_contact_router.get("/{contact_id}/picture", summary="Get RGMC Contact Picture")
+def get_contact_picture(
+    contact_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
+        pictures = meta_data.get("value", []) if meta_status == 200 else []
+        if not pictures:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture found")
+        picture_id = pictures[0]["id"]
+        img_status, img_bytes, content_type = rgmc_get_contact_picture_content(contact_id, picture_id, company_name=company)
+        if img_status != 200 or not img_bytes:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Picture content not available")
+        return Response(content=img_bytes, media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching picture for contact {contact_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@rgmc_contact_router.patch("/{contact_id}/picture", summary="Update RGMC Contact Picture")
+async def update_contact_picture(
+    contact_id: str,
+    file: UploadFile = File(...),
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
+        pictures = meta_data.get("value", []) if meta_status == 200 else []
+        if not pictures:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture record found for contact")
+        picture_id = pictures[0]["id"]
+        image_bytes = await file.read()
+        content_type = file.content_type or "image/jpeg"
+        upd_status, upd_data = rgmc_update_contact_picture(
+            contact_id, picture_id, image_bytes, content_type, company_name=company
+        )
+        if upd_status not in (200, 204):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"BC returned {upd_status}: {upd_data}")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating picture for contact {contact_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
