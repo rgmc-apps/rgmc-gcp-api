@@ -109,6 +109,24 @@ def update_rgmc_contact(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+def _extract_picture_id(meta_data: Any) -> Optional[str]:
+    """
+    BC picture metadata can arrive in three shapes:
+      1. OData collection: {"value": [{"id": "...", ...}]}
+      2. Single object:    {"id": "...", ...}
+      3. Unexpected/non-dict — returns None
+    """
+    if not isinstance(meta_data, dict):
+        logger.warning(f"Unexpected picture metadata type {type(meta_data)}: {str(meta_data)[:200]}")
+        return None
+    value = meta_data.get("value")
+    if isinstance(value, list) and value and isinstance(value[0], dict):
+        return value[0].get("id")
+    if "id" in meta_data:
+        return meta_data["id"]
+    return None
+
+
 @rgmc_contact_router.get("/{contact_id}/picture", summary="Get RGMC Contact Picture")
 def get_contact_picture(
     contact_id: str,
@@ -116,10 +134,11 @@ def get_contact_picture(
 ):
     try:
         meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
-        pictures = meta_data.get("value", []) if meta_status == 200 else []
-        if not pictures:
+        if meta_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {meta_status}: {meta_data}")
+        picture_id = _extract_picture_id(meta_data)
+        if not picture_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture found")
-        picture_id = pictures[0]["id"]
         img_status, img_bytes, content_type = rgmc_get_contact_picture_content(contact_id, picture_id, company_name=company)
         if img_status != 200 or not img_bytes:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Picture content not available")
@@ -139,10 +158,11 @@ async def update_contact_picture(
 ):
     try:
         meta_status, meta_data = rgmc_get_contact_picture(contact_id, company_name=company)
-        pictures = meta_data.get("value", []) if meta_status == 200 else []
-        if not pictures:
+        if meta_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {meta_status}: {meta_data}")
+        picture_id = _extract_picture_id(meta_data)
+        if not picture_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture record found for contact")
-        picture_id = pictures[0]["id"]
         image_bytes = await file.read()
         content_type = file.content_type or "image/jpeg"
         upd_status, upd_data = rgmc_update_contact_picture(
