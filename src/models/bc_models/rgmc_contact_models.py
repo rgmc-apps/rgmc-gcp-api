@@ -23,6 +23,8 @@ class RgmcContactCreate(BaseModel):
     mobilePhoneNo: Optional[str] = None
     email: Optional[str] = None
     salespersonCode: Optional[str] = None
+    username: Optional[str] = None
+    passwordHash: Optional[str] = None
 
 
 class RgmcContactUpdate(RgmcContactCreate):
