@@ -209,7 +209,10 @@ async def update_contact_picture(
         picture_b64 = base64.b64encode(image_bytes).decode("utf-8")
         upd_status, upd_data = rgmc_update_contact_picture(contact_id, picture_b64, company_name=company)
         if upd_status not in (200, 204):
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"BC returned {upd_status}: {upd_data}")
+            logger.warning(
+                f"BC picture sync for contact {contact_id} returned {upd_status}: {upd_data}. "
+                "Photo is cached locally on the client; BC will be synced after Page 50204 is deployed."
+            )
         return {"ok": True}
     except HTTPException:
         raise
