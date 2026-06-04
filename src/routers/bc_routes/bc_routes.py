@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from src.services.bc_functions import call_bc_table, get_dimension_values_by_code, get_access_token
+from src.services.bc_functions import call_bc_table, get_dimension_values_by_code, get_access_token, call_business_central_api
 
 logger = logging.getLogger("bc_routes")
 
@@ -26,6 +26,36 @@ def get_token():
         return {"access_token": token}
     except Exception as e:
         logger.error(f"Error fetching BC access token: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@bc_router.get("/companies", summary="List all BC companies")
+def list_companies():
+    try:
+        http_status, data = call_business_central_api("companies")
+        if http_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}: {data}")
+        return {"data": data.get("value", data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching BC companies: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@bc_router.get("/companies/{company_id}", summary="Get a BC company by ID")
+def get_company(company_id: str):
+    try:
+        http_status, data = call_business_central_api(f"companies({company_id})")
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+        if http_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}: {data}")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching BC company {company_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
