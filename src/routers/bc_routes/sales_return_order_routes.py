@@ -82,15 +82,59 @@ def get_sales_return_order(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+def _map_line_payload(line: dict) -> dict:
+    """Map frontend line fields to BC salesReturnOrderLines field names."""
+    mapped: dict = {"lineType": "Item"}
+    if "itemNumber" in line:
+        mapped["number"] = line["itemNumber"]
+    if "description" in line:
+        mapped["description"] = line["description"]
+    if "quantity" in line:
+        mapped["quantity"] = line["quantity"]
+    if "unitPrice" in line:
+        mapped["unitPrice"] = line["unitPrice"]
+    if "discountPercent" in line:
+        mapped["lineDiscountPercent"] = line["discountPercent"]
+    elif "lineDiscountAmount" in line:
+        qty = line.get("quantity") or 1
+        unit_price = line.get("unitPrice") or 0
+        base = unit_price * qty
+        if base > 0:
+            mapped["lineDiscountPercent"] = round((line["lineDiscountAmount"] / base) * 100, 5)
+    return mapped
+
+
 @sales_return_order_router.post("", summary="Create Sales Return Order", status_code=status.HTTP_201_CREATED)
 def create_sales_return_order(
     body: SalesReturnOrderCreate,
     company: Optional[str] = Query(None, description="Override company name"),
 ):
     try:
-        payload = body.model_dump(exclude_none=True)
+        payload = body.model_dump(mode='json', exclude_none=True)
+
+        # Map frontend's `customerNumber` to BC's `sellToCustomerNo`
+        if 'customerNumber' in payload:
+            payload['sellToCustomerNo'] = payload.pop('customerNumber')
+
+        # Lines are not a header field — extract before POSTing the header
+        lines = payload.pop('lines', [])
+
         http_status, data = rgmc_create_record(_TABLE, payload, company_name=company)
-        return _unwrap_single(http_status, data, "Sales return order")
+        order = _unwrap_single(http_status, data, "Sales return order")
+
+        if lines:
+            order_id = order.get('id')
+            for line in lines:
+                line_payload = _map_line_payload(line)
+                lh, ld = rgmc_create_record(
+                    f"{_TABLE}({order_id})/{_LINES_TABLE}",
+                    line_payload,
+                    company_name=company,
+                )
+                if lh not in (200, 201):
+                    logger.error(f"Failed to create line for return order {order_id}: {ld}")
+
+        return order
     except HTTPException:
         raise
     except Exception as e:
@@ -105,7 +149,7 @@ def update_sales_return_order(
     company: Optional[str] = Query(None, description="Override company name"),
 ):
     try:
-        payload = body.model_dump(exclude_none=True)
+        payload = body.model_dump(mode='json', exclude_none=True)
         if not payload:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
         http_status, data = rgmc_update_record(_TABLE, order_id, payload, company_name=company)

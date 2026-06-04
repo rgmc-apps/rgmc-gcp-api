@@ -1,11 +1,13 @@
 """RGMC custom API — Sales Return Order Pydantic models (Pag50201 / Pag50202)."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
 class SalesReturnOrderCreate(BaseModel):
+    customerNumber: Optional[str] = None
     externalDocumentNo: Optional[str] = None
     sellToCustomerNo: Optional[str] = None
+    lines: Optional[List[Dict[str, Any]]] = None
     sellToContactNo: Optional[str] = None
     sellToAddress: Optional[str] = None
     sellToAddress2: Optional[str] = None
