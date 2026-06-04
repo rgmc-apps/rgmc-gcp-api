@@ -1,12 +1,29 @@
 """Business Central Sales Order Pydantic models."""
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from datetime import date
 from pydantic import BaseModel
+
+
+class SalesOrderLineCreate(BaseModel):
+    lineType: Optional[str] = None
+    lineObjectNumber: Optional[str] = None
+    description: Optional[str] = None
+    unitOfMeasureCode: Optional[str] = None
+    quantity: Optional[float] = None
+    unitPrice: Optional[float] = None
+    discountAmount: Optional[float] = None
+    discountPercent: Optional[float] = None
+    shipmentDate: Optional[str] = None
+
+
+class SalesOrderLineUpdate(SalesOrderLineCreate):
+    pass
 
 
 class SalesOrderCreate(BaseModel):
     customerId: Optional[str] = None
     customerNumber: Optional[str] = None
+    lines: Optional[List[Dict[str, Any]]] = None
     externalDocumentNumber: Optional[str] = None
     orderDate: Optional[date] = None
     postingDate: Optional[date] = None

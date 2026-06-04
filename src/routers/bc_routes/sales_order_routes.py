@@ -9,13 +9,14 @@ from src.services.bc_functions import (
     bc_update_record,
     bc_delete_record,
 )
-from src.models.bc_models import SalesOrderCreate, SalesOrderUpdate
+from src.models.bc_models import SalesOrderCreate, SalesOrderUpdate, SalesOrderLineCreate, SalesOrderLineUpdate
 
 logger = logging.getLogger("bc_routes.sales_orders")
 
 sales_order_router = APIRouter(prefix="/bc/sales-orders", tags=["BC Sales Orders"])
 
 _TABLE = "salesOrders"
+_LINES_TABLE = "salesOrderLines"
 
 
 def _unwrap_list(bc_result: tuple) -> List[Dict[str, Any]]:
@@ -75,6 +76,28 @@ def get_sales_order(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+def _map_line_payload(line: dict) -> dict:
+    """Map frontend line fields to BC v2.0 salesOrderLines field names."""
+    mapped: dict = {"lineType": "Item"}
+    if "itemNumber" in line:
+        mapped["lineObjectNumber"] = line["itemNumber"]
+    if "description" in line:
+        mapped["description"] = line["description"]
+    if "quantity" in line:
+        mapped["quantity"] = line["quantity"]
+    if "unitPrice" in line:
+        mapped["unitPrice"] = line["unitPrice"]
+    if "discountPercent" in line:
+        mapped["discountPercent"] = line["discountPercent"]
+    elif "lineDiscountAmount" in line:
+        qty = line.get("quantity") or 1
+        unit_price = line.get("unitPrice") or 0
+        base = unit_price * qty
+        if base > 0:
+            mapped["discountPercent"] = round((line["lineDiscountAmount"] / base) * 100, 5)
+    return mapped
+
+
 @sales_order_router.post("", summary="Create Sales Order", status_code=status.HTTP_201_CREATED)
 def create_sales_order(
     body: SalesOrderCreate,
@@ -82,8 +105,26 @@ def create_sales_order(
 ):
     try:
         payload = body.model_dump(mode='json', exclude_none=True)
+
+        # Lines are not a header field — extract before POSTing the header
+        lines = payload.pop('lines', [])
+
         http_status, data = bc_create_record(_TABLE, payload, company_name=company)
-        return _unwrap_single(http_status, data)
+        order = _unwrap_single(http_status, data)
+
+        if lines:
+            order_id = order.get('id')
+            for line in lines:
+                line_payload = _map_line_payload(line)
+                lh, ld = bc_create_record(
+                    f"{_TABLE}({order_id})/{_LINES_TABLE}",
+                    line_payload,
+                    company_name=company,
+                )
+                if lh not in (200, 201):
+                    logger.error(f"Failed to create line for sales order {order_id}: {ld}")
+
+        return order
     except HTTPException:
         raise
     except Exception as e:
@@ -128,4 +169,87 @@ def delete_sales_order(
         raise
     except Exception as e:
         logger.error(f"Error deleting sales order {order_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Sales Order Lines
+# ---------------------------------------------------------------------------
+
+@sales_order_router.get("/{order_id}/lines", summary="List Lines for a Sales Order")
+def list_sales_order_lines(
+    order_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+    select: Optional[str] = Query(None, description="OData $select"),
+):
+    try:
+        nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
+        result = call_bc_table(nested, company_name=company, select=select)
+        return {"data": _unwrap_list(result)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing lines for sales order {order_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@sales_order_router.post("/{order_id}/lines", summary="Create a Sales Order Line", status_code=status.HTTP_201_CREATED)
+def create_sales_order_line(
+    order_id: str,
+    body: SalesOrderLineCreate,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        payload = body.model_dump(mode='json', exclude_none=True)
+        nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
+        http_status, data = bc_create_record(nested, payload, company_name=company)
+        return _unwrap_single(http_status, data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating line for sales order {order_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@sales_order_router.patch("/{order_id}/lines/{line_id}", summary="Update a Sales Order Line")
+def update_sales_order_line(
+    order_id: str,
+    line_id: str,
+    body: SalesOrderLineUpdate,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        payload = body.model_dump(mode='json', exclude_none=True)
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
+        nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
+        http_status, data = bc_update_record(nested, line_id, payload, company_name=company)
+        return _unwrap_single(http_status, data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating line {line_id} for sales order {order_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@sales_order_router.delete("/{order_id}/lines/{line_id}", summary="Delete a Sales Order Line", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sales_order_line(
+    order_id: str,
+    line_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
+        http_status = bc_delete_record(nested, line_id, company_name=company)
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales order line not found")
+        if http_status not in (204, 200):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Business Central returned {http_status}",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting line {line_id} for sales order {order_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

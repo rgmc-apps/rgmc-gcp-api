@@ -1,5 +1,5 @@
 """Business Central Models."""
-from .sales_order_models import SalesOrderCreate, SalesOrderUpdate
+from .sales_order_models import SalesOrderCreate, SalesOrderUpdate, SalesOrderLineCreate, SalesOrderLineUpdate
 from .item_models import ItemCreate, ItemUpdate
 from .customer_models import CustomerCreate, CustomerUpdate
 from .sales_credit_memo_models import SalesCreditMemoCreate, SalesCreditMemoUpdate
@@ -16,6 +16,8 @@ from .item_category_models import ItemCategoryCreate, ItemCategoryUpdate
 __all__ = [
     "SalesOrderCreate",
     "SalesOrderUpdate",
+    "SalesOrderLineCreate",
+    "SalesOrderLineUpdate",
     "ItemCreate",
     "ItemUpdate",
     "CustomerCreate",
