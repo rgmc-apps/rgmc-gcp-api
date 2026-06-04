@@ -109,6 +109,55 @@ def update_rgmc_contact(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+_IMAGE_SIGNATURES = [
+    (b'\xff\xd8\xff', "image/jpeg"),
+    (b'\x89PNG\r\n\x1a\n', "image/png"),
+    (b'GIF87a', "image/gif"),
+    (b'GIF89a', "image/gif"),
+    (b'BM', "image/bmp"),
+]
+_MIN_IMAGE_BYTES = 64
+
+
+def _detect_media_type(image_bytes: bytes) -> Optional[str]:
+    for sig, mime in _IMAGE_SIGNATURES:
+        if image_bytes[:len(sig)] == sig:
+            return mime
+    if image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+        return "image/webp"
+    return None
+
+
+@rgmc_contact_router.get("/{contact_id}/picture/debug", summary="Debug: Raw BC Picture Response")
+def debug_contact_picture(
+    contact_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    """Returns the raw response from BC contactPictures for debugging truncation/encoding issues."""
+    try:
+        http_status, data = rgmc_get_contact_picture(contact_id, company_name=company)
+        picture_b64 = (data.get("picture") or "") if isinstance(data, dict) else ""
+        try:
+            decoded = base64.b64decode(picture_b64) if picture_b64 else b""
+            hex_head = decoded[:16].hex() if decoded else ""
+            media_type = _detect_media_type(decoded)
+        except Exception:
+            decoded = b""
+            hex_head = ""
+            media_type = None
+        return {
+            "bc_http_status": http_status,
+            "picture_b64_length": len(picture_b64),
+            "picture_b64_prefix": picture_b64[:40],
+            "decoded_bytes": len(decoded),
+            "hex_header": hex_head,
+            "detected_media_type": media_type,
+            "bc_fields": list(data.keys()) if isinstance(data, dict) else None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @rgmc_contact_router.get("/{contact_id}/picture", summary="Get RGMC Contact Picture")
 def get_contact_picture(
     contact_id: str,
@@ -127,7 +176,19 @@ def get_contact_picture(
         picture_b64 = data.get("picture") or ""
         if not picture_b64:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No picture data on this contact record")
-        return Response(content=base64.b64decode(picture_b64), media_type="image/jpeg")
+        image_bytes = base64.b64decode(picture_b64)
+        if len(image_bytes) < _MIN_IMAGE_BYTES:
+            logger.error(
+                f"Picture for contact {contact_id} decoded to only {len(image_bytes)} bytes "
+                f"(b64 len={len(picture_b64)}, hex={image_bytes.hex()}) — "
+                "BC picture field is likely truncated. Check AL page 50204 Text field length."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"BC returned only {len(image_bytes)} decoded bytes — picture field is truncated in AL page 50204",
+            )
+        media_type = _detect_media_type(image_bytes) or "image/jpeg"
+        return Response(content=image_bytes, media_type=media_type)
     except HTTPException:
         raise
     except Exception as e:

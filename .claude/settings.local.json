@@ -6,7 +6,10 @@
       "Bash(curl -s -H \"Authorization: token $\\(git config --get github.token || echo ''\\)\" https://api.github.com/repos/rgmc-apps/trade_portal_db/contents/)",
       "WebFetch(domain:community.dynamics.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(Remove-Item *)"
+      "Bash(Remove-Item *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://rgmc-gcp-api-935246372408.asia-southeast1.run.app/bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture\")",
+      "Bash(curl -s \"https://rgmc-gcp-api-935246372408.asia-southeast1.run.app/bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture\")",
+      "Bash(xxd)"
     ]
   }
 }
