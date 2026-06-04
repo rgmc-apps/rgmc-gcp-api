@@ -81,7 +81,7 @@ def create_sales_order(
     company: Optional[str] = Query(None, description="Override company name"),
 ):
     try:
-        payload = body.model_dump(exclude_none=True)
+        payload = body.model_dump(mode='json', exclude_none=True)
         http_status, data = bc_create_record(_TABLE, payload, company_name=company)
         return _unwrap_single(http_status, data)
     except HTTPException:
@@ -98,7 +98,7 @@ def update_sales_order(
     company: Optional[str] = Query(None, description="Override company name"),
 ):
     try:
-        payload = body.model_dump(exclude_none=True)
+        payload = body.model_dump(mode='json', exclude_none=True)
         if not payload:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
         http_status, data = bc_update_record(_TABLE, order_id, payload, company_name=company)
