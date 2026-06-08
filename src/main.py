@@ -6,7 +6,7 @@ import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
 from typing import Any, Callable
 from src.logger import logger
-from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router, item_category_router, rgmc_item_router, rgmc_item_family_router, rgmc_item_price_router
+from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router, item_category_router, rgmc_item_router, rgmc_item_family_router, rgmc_item_price_router, rgmc_sales_order_router
 from sqlalchemy import text
 
 tags_metadata = [
@@ -82,6 +82,10 @@ tags_metadata = [
         "name": "BC RGMC Item Prices",
         "description": "RGMC custom API — Item Price read endpoints (Pag50210, api/rgmc/rgmccustom/v1.0).",
     },
+    {
+        "name": "BC RGMC Sales Orders",
+        "description": "RGMC custom API — Sales Order and Lines CRUD endpoints (Pag50216/Pag50217, api/rgmc/rgmccustom/v1.0).",
+    },
 ]
 
 try:
@@ -105,6 +109,7 @@ try:
     api.include_router(rgmc_item_router)
     api.include_router(rgmc_item_family_router)
     api.include_router(rgmc_item_price_router)
+    api.include_router(rgmc_sales_order_router)
 except Exception as e:
     logger.error(f"Error initializing FastAPI: {e}")
     raise e

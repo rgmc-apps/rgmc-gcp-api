@@ -1,79 +1,102 @@
 # Handoff
 
 ## Goal
-Extend the RGMC GCP API (FastAPI/Python) with Business Central endpoints that correctly mirror the actual AL page definitions in `C:\RGMC\AL\RGMC_AL_v2\source\`. This session focused on contact picture endpoints. The end state is a working `GET` and `PATCH` on `/bc/custom/contacts/{contact_id}/picture` that reads from and writes to BC's `contactPictures` entity set (Page 50204).
+Extend the RGMC GCP API (FastAPI/Python) with Business Central endpoints that correctly mirror the actual AL page definitions in `C:\RGMC\AL\RGMC_AL_v2\source\`. The broader goal is a fully working set of RGMC custom API endpoints for contacts (including picture and brand tags), items (including item prices), and sales orders — all routed through the correct RGMC custom API base (`api/rgmc/rgmccustom/v1.0`) rather than the standard BC v2.0 API.
 
 ## Current State
-All code changes are complete and consistent. The app has **not yet been deployed or tested against a live BC environment** after the final round of fixes. The last known deployed state was producing `TypeError: string indices must be integers, not 'str'` — that error is now fully resolved. No broken state in the codebase.
 
-The two live picture endpoints are:
-- `GET  /bc/custom/contacts/{contact_id}/picture` — fetches `contactPictures({contact_id})`, reads `picture` (base64), decodes and returns raw binary `image/jpeg`
-- `PATCH /bc/custom/contacts/{contact_id}/picture` — accepts multipart file upload, encodes to base64, PATCHes `{"picture": base64}` to `contactPictures({contact_id})`
+All committed code is clean and on `main`, up to date with `origin/main`. The working tree has one untracked file (see below).
 
-No INSERT or DELETE on pictures — both are `false` in the AL page definition (Page 50204).
+### What is working and committed
+
+**Contact picture endpoints** (all committed as of `a48a53f` and earlier):
+- `GET /bc/custom/contacts/{contact_id}/picture` — fetches `contactPictures({contact_id})`, decodes base64 `picture` field, returns binary image with auto-detected media type
+- `GET /bc/custom/contacts/{contact_id}/picture/debug` — raw BC response debug dump (bc_http_status, b64 length, hex header, decoded byte count, detected media type)
+- `PATCH /bc/custom/contacts/{contact_id}/picture` — multipart file upload, base64-encodes and PATCHes `{"picture": base64}` to `contactPictures({contact_id})`
+- Has truncation detection: if `decoded_bytes < _MIN_IMAGE_BYTES`, returns 502 with a note to check AL page 50204 Text field length
+- **Not yet tested against live BC environment**
+
+**Contact brand tag endpoints** (committed `01e5b7c`):
+- `GET /bc/custom/contacts/{contact_id}/brand-tags` — lists all brand tags for a contact via `contacts({id})/contactBrandTags`
+- `POST /bc/custom/contacts/{contact_id}/brand-tags` — adds a brand tag (`{"brandCode": "..."}`)
+- `DELETE /bc/custom/contacts/{contact_id}/brand-tags/{tag_id}` — removes a brand tag
+- **Not yet tested against live BC**
+
+**Item price endpoints** (committed `01e5b7c`, fixed in `8e50a2e`):
+- `GET /bc/custom/item-prices` — lists item prices, optional `product_no`, `on_date`, `filter` params
+- `GET /bc/custom/item-prices/active?product_no=...&on_date=YYYY-MM-DD` — returns the single active price record
+- OData filter uses both date bounds: `startingDate le {date} and (endingDate ge {date} or endingDate eq 0001-01-01)` — `0001-01-01` is BC's representation of a blank/open-ended ending date
+- Registered in `main.py` and `bc_routes/__init__.py` as `rgmc_item_price_router`
+- **Not yet tested against live BC**
+
+**Sales order endpoints** (committed `01e5b7c`, updated in `054f489` and `f77ecca`):
+- Full CRUD at `/bc/sales-orders` and `/bc/sales-orders/{order_id}/lines`
+- As of `f77ecca`: routes now use `rgmc_create_record`, `rgmc_update_record`, `rgmc_delete_record`, `call_rgmc_table` (RGMC custom API, not BC v2.0)
+- Field mapping in route handlers: `customerNumber` → `sellToCustomerNo`, `externalDocumentNumber` → `externalDocumentNo`
+- `yourReference` removed from `SalesOrderCreate` (`054f489`) — BC v2.0 rejected it with 400: "The property 'yourReference' does not exist on type 'Microsoft.NAV.salesOrder'"
+- Current models in use: `SalesOrderCreate` / `SalesOrderUpdate` from `src/models/bc_models/sales_order_models.py` (frontend-friendly names with in-route mapping)
+
+### Untracked file (not committed, not wired up)
+
+- `src/models/bc_models/rgmc_sales_order_models.py` — new Pydantic models using raw RGMC field names directly (`sellToCustomerNo`, `externalDocumentNo`, `number`, `lineDiscountPercent`, etc.). Contains `RgmcSalesOrderCreate`, `RgmcSalesOrderUpdate`, `RgmcSalesOrderLineCreate`, `RgmcSalesOrderLineUpdate`. This is **not referenced anywhere** — it appears to be a planned refactor to eliminate the in-route field mapping in `sales_order_routes.py` by using RGMC-native field names in the request body instead. Decision pending: wire it up (replacing `SalesOrderCreate`) or delete it.
 
 ## Files Actively Being Edited
 
-- `src/services/bc_functions.py` — Two picture service functions replaced entirely:
-  - `rgmc_get_contact_picture`: URL changed from `/contacts({id})/picture` to `/contactPictures({id})` (the actual AL entity set)
-  - `rgmc_update_contact_picture`: signature changed from `(contact_id, picture_id, image_bytes, content_type)` to `(contact_id, picture_base64)` — now sends a JSON PATCH with `{"picture": base64}` instead of binary
-  - `rgmc_get_contact_picture_content` — **removed** (sub-resource endpoint does not exist in AL)
-  - `rgmc_delete_contact_picture` — **removed** (Delete is `false` in AL Page 50204)
-  - `_safe_json(response)` helper added — parses JSON, falls back to `response.text` on decode failure
-  - Added `from typing import Any` import
+No files are mid-edit. All changes are committed except the untracked file below.
 
-- `src/routers/bc_routes/rgmc_contact_routes.py` — Picture handlers rewritten:
-  - Added `import base64` at top
-  - Removed `rgmc_get_contact_picture_content` from imports
-  - `GET /{contact_id}/picture`: now calls `rgmc_get_contact_picture`, reads `data["picture"]` (base64), decodes with `base64.b64decode`, returns `Response(content=..., media_type="image/jpeg")`
-  - `PATCH /{contact_id}/picture`: now reads file, encodes with `base64.b64encode`, calls `rgmc_update_contact_picture(contact_id, picture_b64)` — no longer fetches metadata first to find a picture_id
-  - Removed `_extract_picture_id` helper (was a defensive workaround; root cause is now fixed)
-
-- `requirements.txt` — Added `python-multipart==0.0.20` (required by FastAPI for `UploadFile`/`File` form-data parameters; was missing and caused startup crash)
-
-- `src/routers/bc_routes/item_category_routes.py` — **New file** (created in previous session, untouched this session). Full CRUD at `/bc/item-categories` against `itemCategories` BC table.
-
-- `src/models/bc_models/item_category_models.py` — **New file** (previous session). Pydantic models `ItemCategoryCreate` and `ItemCategoryUpdate`.
-
-- `src/routers/bc_routes/item_routes.py` — Added optional `category_code` query param to `list_items` (previous session). Builds OData filter `itemCategoryCode eq '{category_code}'`.
-
-- `src/routers/bc_routes/contact_picture_routes.py` — **Deleted**. This file was created early in the session based on the wrong assumption that the picture endpoint was a BC standard v2.0 sub-resource (`contacts({id})/picture/{id}/content`). The AL defines it as a standalone `contactPictures` entity. All its registrations were also removed from `bc_routes/__init__.py`, `routers/__init__.py`, and `main.py`.
+- `src/models/bc_models/rgmc_sales_order_models.py` — **Untracked, uncommitted.** New models with RGMC-native field names. Not yet referenced by any route. Decide to wire up or delete.
 
 ## Failed Attempts
 
-- **What was tried**: Original picture endpoints in `rgmc_contact_routes.py` fetched `/contacts({id})/picture` and assumed an OData collection response `{"value": [{"id": "...", ...}]}`, then made a second call to `/picture({id})/content` for the binary — **Why it failed**: BC's RGMC custom API uses a separate `contactPictures` entity (Page 50204), not a sub-resource of contacts. The response did not have a `"value"` list of picture objects. The `picture` field on the record IS the image (base64), so a second call to a `/content` sub-endpoint was wrong and unnecessary.
+- **What was tried**: Original picture endpoints fetched `/contacts({id})/picture` and assumed `{"value": [{...}]}` OData collection response, then made a second call to `/picture({id})/content` — **Why it failed**: BC's RGMC custom API uses a separate `contactPictures` entity (Page 50204). The `picture` field on the record IS the image (base64); no `/content` sub-endpoint exists.
 
-- **What was tried**: `contact_picture_routes.py` router with sub-resource paths `/{contact_id}/picture/{picture_id}`, `/{contact_id}/picture/{picture_id}/content`, and `DELETE /{contact_id}/picture/{picture_id}` — **Why it failed**: None of these routes exist in the AL definition (Page 50204). The entity is `contactPictures`, Insert/Delete are disabled, and there is no `/content` sub-endpoint. The file also caused a duplicate FastAPI Operation ID warning because it shared the `/bc/custom/contacts` prefix with `rgmc_contact_router`.
+- **What was tried**: `contact_picture_routes.py` with sub-resource paths `/{contact_id}/picture/{picture_id}`, `/content`, and DELETE — **Why it failed**: None of these exist in AL Page 50204. Insert and Delete are `false`. Also caused duplicate FastAPI Operation ID warnings.
 
-- **What was tried**: Used `response.json() if response.content else {}` to parse BC picture response — **Why it failed**: If BC returns non-JSON content (binary, XML, or plain string) for an error case, `response.json()` raises a `TypeError` or `JSONDecodeError` that surfaced as "string indices must be integers". Replaced with `_safe_json()` which catches parse failures and falls back to `response.text`.
+- **What was tried**: `response.json() if response.content else {}` to parse BC picture responses — **Why it failed**: BC can return non-JSON for error cases; `.json()` raises `JSONDecodeError` surfacing as `TypeError: string indices must be integers`. Replaced with `_safe_json()` helper that falls back to `response.text`.
 
-- **What was tried**: `meta_data.get("value", [])` followed by `pictures[0]["id"]` to extract a picture record ID from the metadata response — **Why it failed**: `meta_data["value"]` was not a list of dicts (BC was returning the picture data differently). If `value` is a string, `pictures[0]` is a single character and `char["id"]` raises `TypeError: string indices must be integers, not 'str'`. The root cause was the wrong URL; the workaround (`_extract_picture_id`) was also removed once the URL was corrected.
+- **What was tried**: `meta_data.get("value", [])` then `pictures[0]["id"]` to get picture record ID — **Why it failed**: When `value` is a string, `pictures[0]` is a single char and `char["id"]` raises `TypeError: string indices must be integers, not 'str'`. Root cause was wrong URL; entire workaround removed.
+
+- **What was tried**: `yourReference` field on `SalesOrderCreate` sent to BC v2.0 sales orders — **Why it failed**: BC returned 400 "The property 'yourReference' does not exist on type 'Microsoft.NAV.salesOrder'". This field does not exist in the standard v2.0 API.
+
+- **What was tried**: Item price filter only using `startingDate le {date}` — **Why it failed**: BC returned 400; the effectivity window requires both bounds: `startingDate le on_date AND (endingDate ge on_date OR endingDate eq 0001-01-01)`.
 
 ## Next Step
-Deploy and test the updated picture endpoints against the live BC environment:
-1. `GET /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture` — should return a binary JPEG.
-2. `PATCH /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture` (multipart file upload) — should update the picture and return `{"ok": true}`.
 
-If `GET` returns 404 with `"Contact picture not found"`, the contact GUID may not be the `SystemId` used as the `contactPictures` key — in BC, `ODataKeyFields = SystemId` means the GUID in the URL must be the record's `SystemId`, not the `No.` field. Verify that the GUID being passed is the contact's `SystemId` (from `GET /bc/custom/contacts/{id}` → `id` field).
+**Decision required on `rgmc_sales_order_models.py`** — then deploy and test.
 
-If `GET` returns 200 but `{"detail": "No picture data on this contact record"}`, the contact has no image set in BC.
+Option A (wire it up): Replace `SalesOrderCreate`/`SalesOrderUpdate` in `sales_order_routes.py` with `RgmcSalesOrderCreate`/`RgmcSalesOrderUpdate` from `rgmc_sales_order_models.py`. This removes the in-route field-mapping (`customerNumber` → `sellToCustomerNo`) since the model already uses RGMC native names. Then commit and deploy.
+
+Option B (delete it): Delete `rgmc_sales_order_models.py` and keep the current approach (frontend-friendly model + in-route mapping). Commit the deletion, then deploy.
+
+After that decision: deploy and run these smoke tests:
+1. `GET /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture/debug` — check `decoded_bytes` is large (> 1000); if small, AL page 50204 Text field is truncating
+2. `GET /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture` — should return binary JPEG
+3. `PATCH /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture` (multipart) — should return `{"ok": true}`
+4. `GET /bc/custom/contacts/{contact_id}/brand-tags` — verify `contactBrandTags` sub-resource works
+5. `GET /bc/custom/item-prices/active?product_no=ITEM001&on_date=2026-06-08` — verify date filter works
 
 ## Context & Gotchas
 
-- **AL source files location**: `C:\RGMC\AL\RGMC_AL_v2\source\RGMCMemberContact\`. Key files: `50203LSCRetailContactAPI.al` (full contact CRUD, includes `picture` field) and `50204LSCRetailContactPictureAPI.al` (picture-only entity).
+- **API prefixes**: `/bc/*` → standard BC `api/v2.0`. `/bc/custom/*` → RGMC in-house extensions at `api/rgmc/rgmccustom/v1.0`. Never mix. Service functions: `bc_*` / `call_bc_table` for v2.0; `rgmc_*` / `call_rgmc_table` for RGMC custom.
 
-- **contactPictures entity**: `EntitySetName = 'contactPictures'`, `ODataKeyFields = SystemId`. The contact's `SystemId` GUID is both the contact record key and the picture record key — they are the same value.
+- **AL source location**: `C:\RGMC\AL\RGMC_AL_v2\source\`. Key files: `50203LSCRetailContactAPI.al` (full contact CRUD, includes `picture` field), `50204LSCRetailContactPictureAPI.al` (picture-only entity, Insert/Delete `false`), `50209` (contactBrandTags sub-resource), `50210` (item prices), `50216/50217` (sales order header/lines).
 
-- **picture field type**: `Rec.Image` in AL — a BC `Media` type. BC serializes this as a base64 string in the JSON response. The Python route decodes it with `base64.b64decode()`. If BC returns the image with a data URI prefix like `data:image/jpeg;base64,...`, you would need to strip the prefix before decoding. This has NOT been confirmed against a live response yet.
+- **contactPictures entity**: `EntitySetName = 'contactPictures'`, `ODataKeyFields = SystemId`. The contact GUID passed in the URL must be the contact's `SystemId`, not the `No.` field. If `GET /picture` returns 404, verify the GUID is the contact's `SystemId` (from `GET /bc/custom/contacts/{id}` → `id` field).
 
-- **No Insert, no Delete on pictures**: `InsertAllowed = false`, `DeleteAllowed = false` in Page 50204. Only `GET` (read) and `PATCH` (update) are valid. The `GET` list endpoint (`/contactPictures`) technically works but no route exposes it — add if needed.
+- **picture field**: BC serializes `Rec.Image` (Media type) as base64 in JSON. If BC returns a data URI prefix (`data:image/jpeg;base64,...`), strip it before decoding. Not confirmed against live BC yet. Routes use `_detect_media_type()` on raw bytes for dynamic content-type.
 
-- **Content-type hardcoded to `image/jpeg`**: The GET route returns `media_type="image/jpeg"` unconditionally. If contacts can have PNG or other formats, this may need to be dynamic. The `contactPictures` entity doesn't expose a contentType field, so the only way to detect it would be inspecting the raw bytes (magic bytes).
+- **Truncation risk**: AL page 50204 may have a `Text[X]` field length limit on the `picture` field. The debug endpoint (`/picture/debug`) reports `decoded_bytes` — if it's tiny (< 100), the base64 is being truncated in AL. Fix requires increasing the field length in the AL page.
 
-- **Routing order**: `rgmc_contact_router` is included before other routers in `main.py`. The `/{contact_id}/picture` path is more specific than `/{contact_id}` so FastAPI should route correctly, but `/{contact_id}/picture` must stay registered AFTER `/{contact_id}` within the same router to avoid prefix shadowing — they are currently in the correct order in `rgmc_contact_routes.py`.
+- **Brand tag OData key**: `contactBrandTags({tag_id})` — the `tag_id` is the BC record `SystemId` returned from the GET list response.
 
-- **python-multipart**: Must be present in `requirements.txt` (now at `==0.0.20`). FastAPI raises a `RuntimeError` at startup (not at request time) if this package is missing and any route uses `UploadFile`/`File`.
+- **Item price endingDate**: BC stores a blank ending date as `0001-01-01`. The OData filter `endingDate eq 0001-01-01` catches open-ended prices. Without this, open-ended prices (most common) would be excluded from the active price lookup.
 
-- **Pattern for RGMC custom API routes**: Use `rgmc_*` service functions from `bc_functions.py` (URL base: `api/rgmc/rgmccustom/v1.0`). Standard BC v2.0 routes use `bc_*` / `call_bc_table` functions (URL base: `api/v2.0`). Never mix them.
+- **Sales order field mapping**: `sales_order_routes.py` currently maps `customerNumber` → `sellToCustomerNo` and `externalDocumentNumber` → `externalDocumentNo` in-route before calling `rgmc_create_record` / `rgmc_update_record`. The untracked `rgmc_sales_order_models.py` would eliminate this mapping by using native field names in the request body directly.
 
-- **Python version**: 3.12. **No auth middleware** on individual routes — OAuth2 client credentials are cached in `bc_functions.py` via `_token_cache`.
+- **python-multipart**: Required for `UploadFile`/`File` in FastAPI. Already in `requirements.txt` at `==0.0.20`. FastAPI raises `RuntimeError` at startup if missing.
+
+- **`_safe_json(response)`**: Helper in `bc_functions.py` (line ~190). Tries `response.json()`, falls back to `response.text` on any parse failure. Use it for all RGMC custom API calls that return body content.
+
+- **Python version**: 3.12. No per-route auth middleware — OAuth2 client credentials are cached in `_token_cache` in `bc_functions.py`.
+
+- **Deployment**: Docker-based, deployed to Google Cloud Run. Build with `gcloud builds submit --tag gcr.io/<PROJECT_ID>/rgmc-gcp-api`, deploy with `gcloud run deploy rgmc-gcp-api ...`. Swagger UI at `/swagger`.
