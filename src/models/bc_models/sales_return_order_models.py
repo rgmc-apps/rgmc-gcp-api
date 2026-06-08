@@ -7,6 +7,7 @@ class SalesReturnOrderCreate(BaseModel):
     customerNumber: Optional[str] = None
     externalDocumentNo: Optional[str] = None
     yourReference: Optional[str] = None
+    submittedBy: Optional[str] = None
     sellToCustomerNo: Optional[str] = None
     lines: Optional[List[Dict[str, Any]]] = None
     sellToContactNo: Optional[str] = None

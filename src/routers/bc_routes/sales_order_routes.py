@@ -1,13 +1,13 @@
-"""Business Central Sales Order endpoints."""
+"""Business Central Sales Order endpoints (RGMC custom API — Pag50216/50217)."""
 import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from src.services.bc_functions import (
-    call_bc_table,
-    bc_get_record,
-    bc_create_record,
-    bc_update_record,
-    bc_delete_record,
+    call_rgmc_table,
+    rgmc_get_record,
+    rgmc_create_record,
+    rgmc_update_record,
+    rgmc_delete_record,
 )
 from src.models.bc_models import SalesOrderCreate, SalesOrderUpdate, SalesOrderLineCreate, SalesOrderLineUpdate
 
@@ -48,7 +48,7 @@ def list_sales_orders(
     select: Optional[str] = Query(None, description="OData $select"),
 ):
     try:
-        result = call_bc_table(_TABLE, company_name=company, odata_filter=filter, expand=expand, select=select)
+        result = call_rgmc_table(_TABLE, company_name=company, odata_filter=filter, expand=expand, select=select)
         return {"data": _unwrap_list(result)}
     except HTTPException:
         raise
@@ -64,10 +64,7 @@ def get_sales_order(
     expand: Optional[str] = Query(None, description="OData $expand (e.g. salesOrderLines)"),
 ):
     try:
-        table = f"{_TABLE}({order_id})"
-        if expand:
-            table += f"?$expand={expand}"
-        http_status, data = bc_get_record(_TABLE, order_id, company_name=company)
+        http_status, data = rgmc_get_record(_TABLE, order_id, company_name=company)
         return _unwrap_single(http_status, data)
     except HTTPException:
         raise
@@ -77,10 +74,10 @@ def get_sales_order(
 
 
 def _map_line_payload(line: dict) -> dict:
-    """Map frontend line fields to BC v2.0 salesOrderLines field names."""
+    """Map frontend line fields to RGMC custom salesOrderLines field names (Pag50217)."""
     mapped: dict = {"lineType": "Item"}
     if "itemNumber" in line:
-        mapped["lineObjectNumber"] = line["itemNumber"]
+        mapped["number"] = line["itemNumber"]
     if "description" in line:
         mapped["description"] = line["description"]
     if "quantity" in line:
@@ -88,13 +85,13 @@ def _map_line_payload(line: dict) -> dict:
     if "unitPrice" in line:
         mapped["unitPrice"] = line["unitPrice"]
     if "discountPercent" in line:
-        mapped["discountPercent"] = line["discountPercent"]
+        mapped["lineDiscountPercent"] = line["discountPercent"]
     elif "lineDiscountAmount" in line:
         qty = line.get("quantity") or 1
         unit_price = line.get("unitPrice") or 0
         base = unit_price * qty
         if base > 0:
-            mapped["discountPercent"] = round((line["lineDiscountAmount"] / base) * 100, 5)
+            mapped["lineDiscountPercent"] = round((line["lineDiscountAmount"] / base) * 100, 5)
     return mapped
 
 
@@ -106,17 +103,23 @@ def create_sales_order(
     try:
         payload = body.model_dump(mode='json', exclude_none=True)
 
+        # Map frontend field names to RGMC custom API field names
+        if 'customerNumber' in payload:
+            payload['sellToCustomerNo'] = payload.pop('customerNumber')
+        if 'externalDocumentNumber' in payload:
+            payload['externalDocumentNo'] = payload.pop('externalDocumentNumber')
+
         # Lines are not a header field — extract before POSTing the header
         lines = payload.pop('lines', [])
 
-        http_status, data = bc_create_record(_TABLE, payload, company_name=company)
+        http_status, data = rgmc_create_record(_TABLE, payload, company_name=company)
         order = _unwrap_single(http_status, data)
 
         if lines:
             order_id = order.get('id')
             for line in lines:
                 line_payload = _map_line_payload(line)
-                lh, ld = bc_create_record(
+                lh, ld = rgmc_create_record(
                     f"{_TABLE}({order_id})/{_LINES_TABLE}",
                     line_payload,
                     company_name=company,
@@ -142,7 +145,11 @@ def update_sales_order(
         payload = body.model_dump(mode='json', exclude_none=True)
         if not payload:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
-        http_status, data = bc_update_record(_TABLE, order_id, payload, company_name=company)
+        if 'customerNumber' in payload:
+            payload['sellToCustomerNo'] = payload.pop('customerNumber')
+        if 'externalDocumentNumber' in payload:
+            payload['externalDocumentNo'] = payload.pop('externalDocumentNumber')
+        http_status, data = rgmc_update_record(_TABLE, order_id, payload, company_name=company)
         return _unwrap_single(http_status, data)
     except HTTPException:
         raise
@@ -157,7 +164,7 @@ def delete_sales_order(
     company: Optional[str] = Query(None, description="Override company name"),
 ):
     try:
-        http_status = bc_delete_record(_TABLE, order_id, company_name=company)
+        http_status = rgmc_delete_record(_TABLE, order_id, company_name=company)
         if http_status == 404:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales order not found")
         if http_status not in (204, 200):
@@ -184,7 +191,7 @@ def list_sales_order_lines(
 ):
     try:
         nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
-        result = call_bc_table(nested, company_name=company, select=select)
+        result = call_rgmc_table(nested, company_name=company, select=select)
         return {"data": _unwrap_list(result)}
     except HTTPException:
         raise
@@ -202,7 +209,7 @@ def create_sales_order_line(
     try:
         payload = body.model_dump(mode='json', exclude_none=True)
         nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
-        http_status, data = bc_create_record(nested, payload, company_name=company)
+        http_status, data = rgmc_create_record(nested, payload, company_name=company)
         return _unwrap_single(http_status, data)
     except HTTPException:
         raise
@@ -223,7 +230,7 @@ def update_sales_order_line(
         if not payload:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
         nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
-        http_status, data = bc_update_record(nested, line_id, payload, company_name=company)
+        http_status, data = rgmc_update_record(nested, line_id, payload, company_name=company)
         return _unwrap_single(http_status, data)
     except HTTPException:
         raise
@@ -240,7 +247,7 @@ def delete_sales_order_line(
 ):
     try:
         nested = f"{_TABLE}({order_id})/{_LINES_TABLE}"
-        http_status = bc_delete_record(nested, line_id, company_name=company)
+        http_status = rgmc_delete_record(nested, line_id, company_name=company)
         if http_status == 404:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales order line not found")
         if http_status not in (204, 200):

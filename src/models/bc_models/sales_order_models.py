@@ -25,6 +25,7 @@ class SalesOrderCreate(BaseModel):
     customerNumber: Optional[str] = None
     lines: Optional[List[Dict[str, Any]]] = None
     externalDocumentNumber: Optional[str] = None
+    submittedBy: Optional[str] = None
     orderDate: Optional[date] = None
     postingDate: Optional[date] = None
     billToCustomerId: Optional[str] = None
