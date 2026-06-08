@@ -210,6 +210,59 @@ def rgmc_update_contact_picture(contact_id: str, picture_base64: str, company_na
     return response.status_code, _safe_json(response)
 
 
+def rgmc_list_contact_brand_tags(contact_id: str, company_name: str = None):
+    """GET contacts({contact_id})/contactBrandTags — all brand tags for a contact (Pag50209)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags"
+    response = requests.get(url, headers=_auth_headers())
+    return response.status_code, _safe_json(response)
+
+
+def rgmc_add_contact_brand_tag(contact_id: str, brand_code: str, company_name: str = None):
+    """POST contacts({contact_id})/contactBrandTags — add a brand tag to a contact (Pag50209)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags"
+    headers = {**_auth_headers(), "Content-Type": "application/json"}
+    response = requests.post(url, json={"brandCode": brand_code}, headers=headers)
+    return response.status_code, _safe_json(response)
+
+
+def rgmc_delete_contact_brand_tag(contact_id: str, tag_id: str, company_name: str = None):
+    """DELETE contacts({contact_id})/contactBrandTags({tag_id}) — remove a brand tag (Pag50209)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags({tag_id})"
+    response = requests.delete(url, headers=_auth_headers())
+    return response.status_code
+
+
+def rgmc_list_item_prices(
+    company_name: str = None,
+    product_no: str = None,
+    on_date: str = None,
+    odata_filter: str = None,
+    top: int = None,
+):
+    """GET itemPrices with optional product_no / date filters, ordered by startingDate desc (Pag50210)."""
+    company_id = get_company_id(company_name)
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/itemPrices"
+    params = []
+    filters = []
+    if product_no:
+        filters.append(f"productNo eq '{product_no}'")
+    if on_date:
+        filters.append(f"startingDate le {on_date}")
+    if odata_filter:
+        filters.append(odata_filter)
+    if filters:
+        params.append(f"$filter={' and '.join(filters)}")
+    params.append("$orderby=startingDate desc")
+    if top:
+        params.append(f"$top={top}")
+    url += "?" + "&".join(params)
+    response = requests.get(url, headers=_auth_headers())
+    return response.status_code, _safe_json(response)
+
+
 def get_dimension_values_by_code(dimension_code: str, company_name: str = None):
     """Return all dimension values for the given dimension code (e.g. 'BRAND').
 

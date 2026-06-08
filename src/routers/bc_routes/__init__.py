@@ -10,3 +10,4 @@ from .rgmc_contact_routes import rgmc_contact_router
 from .item_category_routes import item_category_router
 from .rgmc_item_routes import rgmc_item_router
 from .rgmc_item_family_routes import rgmc_item_family_router
+from .rgmc_item_price_routes import rgmc_item_price_router

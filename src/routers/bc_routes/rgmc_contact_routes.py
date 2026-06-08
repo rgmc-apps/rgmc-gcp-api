@@ -12,8 +12,12 @@ from src.services.bc_functions import (
     rgmc_delete_record,
     rgmc_get_contact_picture,
     rgmc_update_contact_picture,
+    rgmc_list_contact_brand_tags,
+    rgmc_add_contact_brand_tag,
+    rgmc_delete_contact_brand_tag,
 )
 from src.models.bc_models import RgmcContactCreate, RgmcContactUpdate
+from src.models.bc_models.rgmc_contact_brand_tag_models import ContactBrandTagCreate
 
 logger = logging.getLogger("bc_routes.rgmc_contacts")
 
@@ -218,6 +222,68 @@ async def update_contact_picture(
         raise
     except Exception as e:
         logger.error(f"Error updating picture for contact {contact_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Brand Tags  (Pag50209 — sub-resource contacts({id})/contactBrandTags)
+# ---------------------------------------------------------------------------
+
+@rgmc_contact_router.get("/{contact_id}/brand-tags", summary="List Brand Tags for Contact")
+def list_contact_brand_tags(
+    contact_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        http_status, data = rgmc_list_contact_brand_tags(contact_id, company_name=company)
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+        if http_status != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}: {data}")
+        return {"data": data.get("value", data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing brand tags for contact {contact_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@rgmc_contact_router.post("/{contact_id}/brand-tags", summary="Add Brand Tag to Contact", status_code=status.HTTP_201_CREATED)
+def add_contact_brand_tag(
+    contact_id: str,
+    body: ContactBrandTagCreate,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        http_status, data = rgmc_add_contact_brand_tag(contact_id, body.brandCode, company_name=company)
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+        if http_status not in (200, 201):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}: {data}")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding brand tag to contact {contact_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@rgmc_contact_router.delete("/{contact_id}/brand-tags/{tag_id}", summary="Remove Brand Tag from Contact", status_code=status.HTTP_204_NO_CONTENT)
+def delete_contact_brand_tag(
+    contact_id: str,
+    tag_id: str,
+    company: Optional[str] = Query(None, description="Override company name"),
+):
+    try:
+        http_status = rgmc_delete_contact_brand_tag(contact_id, tag_id, company_name=company)
+        if http_status == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand tag not found")
+        if http_status not in (200, 204):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Business Central returned {http_status}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting brand tag {tag_id} from contact {contact_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

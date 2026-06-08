@@ -11,6 +11,7 @@ from .sales_return_order_models import (
     SalesReturnOrderLineUpdate,
 )
 from .rgmc_contact_models import RgmcContactCreate, RgmcContactUpdate
+from .rgmc_contact_brand_tag_models import ContactBrandTagCreate
 from .item_category_models import ItemCategoryCreate, ItemCategoryUpdate
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "SalesReturnOrderLineUpdate",
     "RgmcContactCreate",
     "RgmcContactUpdate",
+    "ContactBrandTagCreate",
     "ItemCategoryCreate",
     "ItemCategoryUpdate",
 ]
