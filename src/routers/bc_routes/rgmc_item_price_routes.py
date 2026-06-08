@@ -46,8 +46,10 @@ def get_active_item_price(
     on_date: str = Query(..., description="Date in YYYY-MM-DD format"),
     company: Optional[str] = Query(None, description="Override company name"),
 ):
-    """Returns the single most recent price for an item whose startingDate is on or before the given date.
-    Mirrors the BC pattern: SetFilter startingDate ..date, sort descending, FindFirst."""
+    """Returns the single active price for an item on the given date.
+    A price is active when startingDate <= on_date <= endingDate.
+    A blank endingDate (stored as 0001-01-01 by BC) means open-ended — always included.
+    Results are ordered by startingDate desc; $top=1 returns the most-recently-effective price."""
     try:
         http_status, data = rgmc_list_item_prices(
             company_name=company,

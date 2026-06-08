@@ -242,7 +242,15 @@ def rgmc_list_item_prices(
     odata_filter: str = None,
     top: int = None,
 ):
-    """GET itemPrices with optional product_no / date filters, ordered by startingDate desc (Pag50210)."""
+    """GET itemPrices filtered to the price effectivity window (Pag50210).
+
+    When on_date is provided the filter enforces:
+        startingDate <= on_date <= endingDate
+    A blank endingDate is stored by BC as 0001-01-01 (meaning "open-ended"),
+    so records with endingDate eq 0001-01-01 are always included.
+    Results are ordered startingDate desc so the most-recent effective price
+    comes first when the caller uses $top=1.
+    """
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/itemPrices"
     params = []
@@ -251,6 +259,7 @@ def rgmc_list_item_prices(
         filters.append(f"productNo eq '{product_no}'")
     if on_date:
         filters.append(f"startingDate le {on_date}")
+        filters.append(f"(endingDate ge {on_date} or endingDate eq 0001-01-01)")
     if odata_filter:
         filters.append(odata_filter)
     if filters:
