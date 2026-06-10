@@ -18,7 +18,8 @@ handoff_router = APIRouter(prefix="/handoff", tags=["SBICHandoff"])
 @handoff_router.post("/runbridge/")
 async def run_handoff_bridge(
     method: str = 'manual',
-    groupcode: str = Query(None, description="Group code override for manual calls")
+    groupcode: str = Query(None, description="Group code override for manual calls"),
+    _: None = Depends(rate_limit)
 ):
     try:
         if groupcode is None:
