@@ -117,15 +117,27 @@ def create_sales_order(
 
         if lines:
             order_id = order.get('id')
-            for line in lines:
-                line_payload = _map_line_payload(line)
-                lh, ld = rgmc_create_record(
-                    f"{_TABLE}({order_id})/{_LINES_TABLE}",
-                    line_payload,
-                    company_name=company,
-                )
-                if lh not in (200, 201):
-                    logger.error(f"Failed to create line for sales order {order_id}: {ld}")
+            for i, line in enumerate(lines, start=1):
+                try:
+                    line_payload = _map_line_payload(line)
+                    lh, ld = rgmc_create_record(
+                        f"{_TABLE}({order_id})/{_LINES_TABLE}",
+                        line_payload,
+                        company_name=company,
+                    )
+                    if lh not in (200, 201):
+                        raise ValueError(f"BC returned {lh}: {ld}")
+                except Exception as line_err:
+                    logger.error(f"Failed to create line {i} for sales order {order_id}: {line_err}")
+                    # Roll back: delete the header so BC is not left with a partial order
+                    try:
+                        rgmc_delete_record(_TABLE, order_id, company_name=company)
+                    except Exception as del_err:
+                        logger.error(f"Rollback failed for sales order {order_id}: {del_err}")
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Line {i} creation failed: {line_err}. Order rolled back.",
+                    )
 
         return order
     except HTTPException:

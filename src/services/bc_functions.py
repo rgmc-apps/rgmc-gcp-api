@@ -164,7 +164,7 @@ def rgmc_create_record(table_endpoint: str, payload: dict, company_name: str = N
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}"
     headers = {**_auth_headers(), "Content-Type": "application/json"}
     response = requests.post(url, json=payload, headers=headers)
-    return response.status_code, response.json()
+    return response.status_code, _safe_json(response)
 
 
 def rgmc_update_record(table_endpoint: str, record_id: str, payload: dict, company_name: str = None):
