@@ -1,8 +1,9 @@
 """RGMC custom API — Item Price endpoints (Pag50210)."""
 import logging
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
-from src.services.bc_functions import rgmc_list_item_prices
+from fastapi import APIRouter, Body, HTTPException, Query, status
+from src.services.bc_functions import rgmc_list_item_prices, update_cached_item_price
+from src.models.bc_models import ItemPriceUpdate
 
 logger = logging.getLogger("bc_routes.rgmc_item_prices")
 
@@ -68,4 +69,38 @@ def get_active_item_price(
         raise
     except Exception as e:
         logger.error(f"Error fetching active price for item {product_no} on {on_date}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@rgmc_item_price_router.patch("/cache", summary="Update Cached Item Price")
+def update_cached_price(
+    product_no: str = Query(..., description="Item No. to update in cache"),
+    on_date: Optional[str] = Query(None, description="Restrict update to entries cached for this date (YYYY-MM-DD)"),
+    company: Optional[str] = Query(None, description="Override company name"),
+    payload: ItemPriceUpdate = Body(...),
+):
+    """Merge price fields into every cached entry for the given item.
+
+    Use this to keep the offline cache in sync after a manual price change so
+    that subsequent offline-mode reads return the updated price rather than the
+    stale one fetched from Business Central.
+    """
+    updated_fields = payload.model_dump(exclude_none=True)
+    if not updated_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Request body must include at least one field to update.",
+        )
+    try:
+        count = update_cached_item_price(product_no, updated_fields, company, on_date)
+        if count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No cached price entry found for item '{product_no}'. Perform a price lookup first.",
+            )
+        return {"updated_cache_entries": count, "product_no": product_no, "applied": updated_fields}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating cached price for item {product_no}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

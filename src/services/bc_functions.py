@@ -10,6 +10,7 @@ _BC_BASE = "https://api.businesscentral.dynamics.com/v2.0"
 _token_lock = threading.Lock()
 _token_cache: dict = {"token": None, "expires_at": 0.0}
 _company_id_cache: dict = {}
+_item_price_cache: dict = {}
 
 
 def get_access_token() -> str:
@@ -251,25 +252,64 @@ def rgmc_list_item_prices(
     Results are ordered startingDate desc so the most-recent effective price
     comes first when the caller uses $top=1.
     """
-    company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/itemPrices"
-    params = []
-    filters = []
-    if product_no:
-        filters.append(f"productNo eq '{product_no}'")
-    if on_date:
-        filters.append(f"startingDate le {on_date}")
-        filters.append(f"(endingDate ge {on_date} or endingDate eq 0001-01-01)")
-    if odata_filter:
-        filters.append(odata_filter)
-    if filters:
-        params.append(f"$filter={' and '.join(filters)}")
-    params.append("$orderby=startingDate desc")
-    if top:
-        params.append(f"$top={top}")
-    url += "?" + "&".join(params)
-    response = requests.get(url, headers=_auth_headers())
-    return response.status_code, _safe_json(response)
+    cache_key = (company_name or BC_COMPANY, product_no, on_date, odata_filter, top)
+    try:
+        company_id = get_company_id(company_name)
+        url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/itemPrices"
+        params = []
+        filters = []
+        if product_no:
+            filters.append(f"productNo eq '{product_no}'")
+        if on_date:
+            filters.append(f"startingDate le {on_date}")
+            filters.append(f"(endingDate ge {on_date} or endingDate eq 0001-01-01)")
+        if odata_filter:
+            filters.append(odata_filter)
+        if filters:
+            params.append(f"$filter={' and '.join(filters)}")
+        params.append("$orderby=startingDate desc")
+        if top:
+            params.append(f"$top={top}")
+        url += "?" + "&".join(params)
+        response = requests.get(url, headers=_auth_headers())
+        data = _safe_json(response)
+        if response.ok:
+            _item_price_cache[cache_key] = data
+        return response.status_code, data
+    except Exception:
+        cached = _item_price_cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+        raise
+
+
+def update_cached_item_price(
+    product_no: str,
+    updated_fields: dict,
+    company_name: str = None,
+    on_date: str = None,
+) -> int:
+    """Merge updated_fields into every cached price record that matches product_no.
+
+    Matches all cache entries for the item regardless of odata_filter / top so
+    that callers don't need to know the exact parameters used at lookup time.
+    Optionally narrow to a specific on_date. Returns the number of cache entries
+    that were updated (0 means the item has never been looked up / cached).
+    """
+    target_company = (company_name or BC_COMPANY).upper()
+    count = 0
+    for cache_key, cached_data in _item_price_cache.items():
+        key_company, key_product_no, key_on_date = cache_key[0], cache_key[1], cache_key[2]
+        if key_company.upper() != target_company:
+            continue
+        if key_product_no != product_no:
+            continue
+        if on_date and key_on_date != on_date:
+            continue
+        for record in cached_data.get("value", []):
+            record.update(updated_fields)
+        count += 1
+    return count
 
 
 def get_dimension_values_by_code(dimension_code: str, company_name: str = None):
