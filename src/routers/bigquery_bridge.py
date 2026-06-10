@@ -313,7 +313,9 @@ class BigqueryBridge(object):
             bq_table = self.__get_bigquery_data('int_online_sales_data')
             header_table, detail_table = self.__format_onlinesalespo_data(bq_table)
 
-        if header_table is None and detail_table is None:
+        header_empty = not isinstance(header_table, pandas.DataFrame) or header_table.empty
+        detail_empty = not isinstance(detail_table, pandas.DataFrame) or detail_table.empty
+        if header_empty and detail_empty:
             self.__log("No data fetched from BigQuery. Exiting process.", level="info")
             return {"status": "success", "message": "No new data to process."}
 
