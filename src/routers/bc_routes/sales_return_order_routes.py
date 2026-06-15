@@ -127,6 +127,7 @@ def create_sales_return_order(
             for i, line in enumerate(lines, start=1):
                 try:
                     line_payload = _map_line_payload(line)
+                    line_payload["lineNo"] = i * 10000
                     lh, ld = rgmc_create_record(
                         f"{_TABLE}({order_id})/{_LINES_TABLE}",
                         line_payload,
