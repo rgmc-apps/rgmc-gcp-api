@@ -130,19 +130,18 @@ def bc_delete_record(table_endpoint: str, record_id: str, company_name: str = No
 _RGMC_CUSTOM_API = "api/rgmc/rgmccustom/v1.0"
 
 
-def call_rgmc_table(table_endpoint: str, company_name: str = None, odata_filter: str = None, expand: str = None, select: str = None):
+def call_rgmc_table(table_endpoint: str, company_name: str = None, odata_filter: str = None, expand: str = None, select: str = None, top: int = 1000):
     """Call a company-scoped RGMC custom API table and return (status, value_list)."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}"
-    params = []
+    params = [f"$top={top}"]
     if odata_filter:
         params.append(f"$filter={odata_filter}")
     if expand:
         params.append(f"$expand={expand}")
     if select:
         params.append(f"$select={select}")
-    if params:
-        url += "?" + "&".join(params)
+    url += "?" + "&".join(params)
     try:
         records = _fetch_all_pages(url)
         return 200, {"value": records}
