@@ -238,6 +238,7 @@ def rgmc_delete_contact_brand_tag(contact_id: str, tag_id: str, company_name: st
 def rgmc_list_item_prices(
     company_name: str = None,
     product_no: str = None,
+    product_nos: list = None,
     on_date: str = None,
     odata_filter: str = None,
     top: int = None,
@@ -250,8 +251,12 @@ def rgmc_list_item_prices(
     so records with endingDate eq 0001-01-01 are always included.
     Results are ordered startingDate desc so the most-recent effective price
     comes first when the caller uses $top=1.
+
+    product_nos accepts a list of product numbers and builds an OData OR filter,
+    scoping the fetch to only those items instead of the full price list.
+    Pagination is followed automatically unless top=1 (single active-price lookup).
     """
-    cache_key = (company_name or BC_COMPANY, product_no, on_date, odata_filter, top)
+    cache_key = (company_name or BC_COMPANY, product_no, tuple(product_nos) if product_nos else None, on_date, odata_filter, top)
     try:
         company_id = get_company_id(company_name)
         url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/itemPrices"
@@ -259,6 +264,9 @@ def rgmc_list_item_prices(
         filters = []
         if product_no:
             filters.append(f"productNo eq '{product_no}'")
+        elif product_nos:
+            nos_filter = " or ".join(f"productNo eq '{n}'" for n in product_nos)
+            filters.append(f"({nos_filter})")
         if on_date:
             filters.append(f"startingDate le {on_date}")
             filters.append(f"(endingDate ge {on_date} or endingDate eq 0001-01-01)")
@@ -270,11 +278,20 @@ def rgmc_list_item_prices(
         if top:
             params.append(f"$top={top}")
         url += "?" + "&".join(params)
-        response = requests.get(url, headers=_auth_headers())
-        data = _safe_json(response)
-        if response.ok:
+        if top == 1:
+            # Fast path for single active-price lookups — one record, no pagination.
+            response = requests.get(url, headers=_auth_headers())
+            data = _safe_json(response)
+            if response.ok:
+                _item_price_cache[cache_key] = data
+            return response.status_code, data
+        else:
+            # Follow pagination so price lists larger than BC's default page size
+            # are returned in full.
+            records = _fetch_all_pages(url)
+            data = {"value": records}
             _item_price_cache[cache_key] = data
-        return response.status_code, data
+            return 200, data
     except Exception:
         cached = _item_price_cache.get(cache_key)
         if cached is not None:
@@ -298,7 +315,7 @@ def update_cached_item_price(
     target_company = (company_name or BC_COMPANY).upper()
     count = 0
     for cache_key, cached_data in _item_price_cache.items():
-        key_company, key_product_no, key_on_date = cache_key[0], cache_key[1], cache_key[2]
+        key_company, key_product_no, key_on_date = cache_key[0], cache_key[1], cache_key[3]
         if key_company.upper() != target_company:
             continue
         if key_product_no != product_no:
