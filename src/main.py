@@ -1,12 +1,15 @@
 import os
+import threading
 import time
 import pandas_gbq
 import src.config as config
 import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from typing import Any, Callable
 from src.logger import logger
 from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router, item_category_router, rgmc_item_router, rgmc_item_family_router, rgmc_item_price_router, rgmc_sales_order_router
+from src.services.send_mail import notify_error
 from sqlalchemy import text
 
 tags_metadata = [
@@ -120,6 +123,34 @@ async def add_process_time_header(request: Request, call_next: Callable) -> Any:
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+
+@api.middleware("http")
+async def error_email_middleware(request: Request, call_next: Callable) -> Any:
+    response = await call_next(request)
+    if response.status_code in (500, 502):
+        # Buffer the streaming body so we can (a) read it and (b) re-emit it to the client.
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+        client_ip = request.headers.get("X-Forwarded-For") or (
+            request.client.host if request.client else ""
+        )
+        threading.Thread(
+            target=notify_error,
+            args=(request.method, str(request.url), response.status_code, body.decode("utf-8", errors="replace"), client_ip),
+            daemon=True,
+        ).start()
+        # Rebuild the response — drop content-length so FastAPI recomputes it.
+        headers = dict(response.headers)
+        headers.pop("content-length", None)
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.media_type,
+        )
     return response
 
 @api.get("/index")

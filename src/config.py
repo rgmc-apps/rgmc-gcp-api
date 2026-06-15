@@ -29,3 +29,9 @@ BC_AUTH_URL = os.getenv("BC_AUTH_URL", f"https://login.microsoftonline.com/{BC_T
 
 BC_ENVIRONMENT = os.getenv("BC_ENVIRONMENT", "UAT")
 BC_COMPANY = os.getenv("BC_COMPANY", "CGI")
+
+developer_email = os.getenv("DEVELOPER_EMAIL", "")
+smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+smtp_port = int(os.getenv("SMTP_PORT", "587"))
+smtp_user = os.getenv("SMTP_USER", "")
+smtp_password = os.getenv("SMTP_PASSWORD", "")
