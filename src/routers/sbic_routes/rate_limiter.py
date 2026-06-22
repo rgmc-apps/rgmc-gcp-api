@@ -4,7 +4,7 @@ import time
 from fastapi import HTTPException, Request, status
 
 _last_called: dict[str, float] = {}
-COOLDOWN_SECONDS = 60
+COOLDOWN_SECONDS = 30
 
 
 def rate_limit(request: Request) -> None:
