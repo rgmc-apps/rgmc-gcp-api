@@ -10,9 +10,9 @@ import src.mappings as mappings
 client = cloud_logging.Client()
 client.setup_logging()
 
-logger = logging.getLogger("sbic_routes")
+logger = logging.getLogger("mssql_routes")
 
-sbic_router = APIRouter(tags=["SBIC"])
+mssql_router = APIRouter(tags=["MSSQL"])
 
 _engines = {}
 
@@ -31,7 +31,7 @@ def _validate_db(db_name: str):
         )
 
 
-@sbic_router.get("/{db_name}/by_table/value")
+@mssql_router.get("/{db_name}/by_table/value")
 async def get_by_value(
     db_name: str,
     table_name: str = Query(...),
@@ -53,7 +53,7 @@ async def get_by_value(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@sbic_router.get("/{db_name}/by_table/latest")
+@mssql_router.get("/{db_name}/by_table/latest")
 async def get_latest(
     db_name: str,
     table_name: str = Query(...),

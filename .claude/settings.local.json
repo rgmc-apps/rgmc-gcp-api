@@ -12,7 +12,8 @@
       "Bash(xxd)",
       "Bash(git -C \"C:\\\\RGMC\\\\Source\\\\git\\\\rgmc-gcp-api\" status)",
       "Bash(git -C \"C:\\\\RGMC\\\\Source\\\\git\\\\rgmc-gcp-api\" log --oneline -6)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(del *)"
     ]
   }
 }
