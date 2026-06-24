@@ -384,6 +384,7 @@ class BigqueryBridge(object):
             "details": {"header_records": len(header_table), 
                         "detail_records": len(detail_table)}}
 
+
 if __name__ == "__main__":
     # For local testing
     import logging

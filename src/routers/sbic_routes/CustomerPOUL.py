@@ -1,4 +1,5 @@
 """CustomerPOUL Related Queries and Functions."""
+
 import logging
 from google.cloud import logging as cloud_logging
 from fastapi import HTTPException, Query, Request, status, Depends, APIRouter
