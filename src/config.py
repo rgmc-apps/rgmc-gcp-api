@@ -35,3 +35,6 @@ smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
 smtp_port = int(os.getenv("SMTP_PORT", "587"))
 smtp_user = os.getenv("SMTP_USER", "")
 smtp_password = os.getenv("SMTP_PASSWORD", "")
+
+# Pub/Sub — POUL Sales Order import trigger
+pubsub_poul_so_topic = os.getenv("PUBSUB_POUL_SO_TOPIC", "")

@@ -1,4 +1,6 @@
 """BigQuery to MSSQL Bridge Router."""
+import json
+import math
 import pandas
 import pandas_gbq
 import re
@@ -207,6 +209,58 @@ class BigqueryBridge(object):
 
         return df.rename(columns=column_mapping)
     
+    def __trigger_so_import(self, header_table: pandas.DataFrame, detail_table: pandas.DataFrame):
+        """Publish one Pub/Sub message per POUL order whose companyName contains SUNCOAST or SBIC."""
+        try:
+            from google.cloud import pubsub_v1
+        except ImportError:
+            self.__log("google-cloud-pubsub not installed — skipping SO import trigger.", level="warning")
+            return
+
+        topic = config.pubsub_poul_so_topic
+        if not topic:
+            self.__log("PUBSUB_POUL_SO_TOPIC not configured — skipping SO import trigger.", level="warning")
+            return
+
+        mask = header_table['companyName'].astype(str).str.upper().str.contains('SUNCOAST|SBIC', na=False)
+        filtered = header_table[mask]
+        if filtered.empty:
+            self.__log("No SUNCOAST/SBIC orders in batch — skipping SO import trigger.", level="info")
+            return
+
+        def _serializable(val):
+            if isinstance(val, bytes):
+                return val.decode('utf-8', errors='replace')
+            if isinstance(val, float) and math.isnan(val):
+                return None
+            if hasattr(val, 'isoformat'):
+                return val.isoformat()
+            return val
+
+        publisher = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path(config.bigquery_project_id, topic)
+
+        published = 0
+        for _, hrow in filtered.iterrows():
+            header_dict = {k: _serializable(v) for k, v in hrow.to_dict().items()}
+            po_ref = hrow.get('poRefNumber', '')
+            cust_name_raw = hrow.get('customerName')
+
+            detail_mask = detail_table['poRefNumber'] == po_ref
+            if cust_name_raw is not None and 'customerName' in detail_table.columns:
+                detail_mask &= detail_table['customerName'] == cust_name_raw
+
+            lines = [
+                {k: _serializable(v) for k, v in row.items()}
+                for row in detail_table[detail_mask].to_dict(orient='records')
+            ]
+
+            payload = {"type": "poul-so-import", "header": header_dict, "lines": lines}
+            publisher.publish(topic_path, json.dumps(payload).encode('utf-8'))
+            published += 1
+
+        self.__log(f"Published {published} POUL SO import message(s) to Pub/Sub.", level="info")
+
     def __extract_duplicate_key(self, error_message: str):
         """
         Extracts the duplicate key value from a SQL IntegrityError message.
@@ -362,6 +416,8 @@ class BigqueryBridge(object):
                     )
                 continue_execution = False
                 self.__log("Data inserted successfully into MSSQL.", level="info")
+                if self.__group_code == 'customerpoul':
+                    self.__trigger_so_import(header_table, detail_table)
                 self.__log("Inserted Records - {}: {}, {}: {}".format(mssql_header_table_name, 
                                                                       ul_bq, 
                                                                       mssql_detail_table_name, 
