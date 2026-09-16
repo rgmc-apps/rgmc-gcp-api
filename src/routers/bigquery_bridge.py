@@ -26,6 +26,8 @@ class BigqueryBridge(object):
         self.__method = method
         self.__log_body = "BigQuery Bridge Execution Log ({} Run): {}".format(self.__method, datetime.now().isoformat())
         self.__group_code = group_code
+        self.__dup_header_keys: list[str] = []
+        self.__dup_detail_keys: list[str] = []
         self.__dataset_id = "{}.{}".format(config.bigquery_project_id,
             mappings.bigquery_dataset_mappings[self.__table_version].get(group_code, 'sbic_int'))
         
@@ -38,6 +40,11 @@ class BigqueryBridge(object):
         elif level == "warning":
             self.__logger.warning(message)
         self.__log_body += "\n{}: {}".format(level.upper(), message)
+
+    def __log_section(self, content: str) -> None:
+        """Append a pre-formatted block verbatim to both Cloud Run logs and the email body."""
+        self.__logger.info(content)
+        self.__log_body += f"\n{content}"
         
     def __get_last_run_timestamp(self):
         """Get the last run timestamp from MSSQL table."""
@@ -211,21 +218,32 @@ class BigqueryBridge(object):
     
     def __trigger_so_import(self, header_table: pandas.DataFrame, detail_table: pandas.DataFrame):
         """Publish one Pub/Sub message per POUL order whose companyName contains SUNCOAST or SBIC."""
+        sep = "-" * 55
+
         try:
             from google.cloud import pubsub_v1
         except ImportError:
-            self.__log("google-cloud-pubsub not installed — skipping SO import trigger.", level="warning")
+            self.__log_section(
+                f"\n{sep}\nSO IMPORT TRIGGER\n{sep}\n"
+                f"  Status : SKIPPED — google-cloud-pubsub not installed\n{sep}"
+            )
             return
 
         topic = config.pubsub_poul_so_topic
         if not topic:
-            self.__log("PUBSUB_POUL_SO_TOPIC not configured — skipping SO import trigger.", level="warning")
+            self.__log_section(
+                f"\n{sep}\nSO IMPORT TRIGGER\n{sep}\n"
+                f"  Status : SKIPPED — PUBSUB_POUL_SO_TOPIC not configured\n{sep}"
+            )
             return
 
         mask = header_table['companyName'].astype(str).str.upper().str.contains('SUNCOAST|SBIC', na=False)
         filtered = header_table[mask]
         if filtered.empty:
-            self.__log("No SUNCOAST/SBIC orders in batch — skipping SO import trigger.", level="info")
+            self.__log_section(
+                f"\n{sep}\nSO IMPORT TRIGGER\n{sep}\n"
+                f"  Status : SKIPPED — no SUNCOAST / SBIC orders in batch\n{sep}"
+            )
             return
 
         def _serializable(val):
@@ -240,13 +258,14 @@ class BigqueryBridge(object):
         publisher = pubsub_v1.PublisherClient()
         topic_path = publisher.topic_path(config.bigquery_project_id, topic)
 
-        published = 0
+        published_refs: list[tuple[str, str]] = []
         for _, hrow in filtered.iterrows():
             header_dict = {k: _serializable(v) for k, v in hrow.to_dict().items()}
-            po_ref = hrow.get('poRefNumber', '')
+            po_ref = str(hrow.get('poRefNumber', '(unknown)'))
+            company_name = str(hrow.get('companyName', ''))
             cust_name_raw = hrow.get('customerName')
 
-            detail_mask = detail_table['poRefNumber'] == po_ref
+            detail_mask = detail_table['poRefNumber'] == hrow.get('poRefNumber', '')
             if cust_name_raw is not None and 'customerName' in detail_table.columns:
                 detail_mask &= detail_table['customerName'] == cust_name_raw
 
@@ -257,9 +276,20 @@ class BigqueryBridge(object):
 
             payload = {"type": "poul-so-import", "header": header_dict, "lines": lines}
             publisher.publish(topic_path, json.dumps(payload).encode('utf-8'))
-            published += 1
+            published_refs.append((po_ref, company_name))
 
-        self.__log(f"Published {published} POUL SO import message(s) to Pub/Sub.", level="info")
+        trigger_lines = [
+            f"\n{sep}",
+            "SO IMPORT TRIGGER",
+            sep,
+            f"  Status : TRIGGERED",
+            f"  Topic  : {topic}",
+            f"  Sent   : {len(published_refs)} message(s)",
+        ]
+        for po_ref, co in published_refs:
+            trigger_lines.append(f"    - {po_ref}  [{co}]")
+        trigger_lines.append(sep)
+        self.__log_section("\n".join(trigger_lines))
 
     def __extract_duplicate_key(self, error_message: str):
         """
@@ -280,6 +310,42 @@ class BigqueryBridge(object):
 
         return values
     
+    def __build_summary(
+        self,
+        header_table: pandas.DataFrame,
+        detail_table: pandas.DataFrame,
+        main_key: str,
+        header_tbl_name: str,
+        detail_tbl_name: str,
+    ) -> str:
+        sep = "-" * 55
+        lines = [f"\n{sep}", "INSERT SUMMARY", sep]
+
+        h_keys = (
+            header_table[main_key].astype(str).tolist()
+            if main_key in header_table.columns else []
+        )
+        lines.append(f"  Inserted  {header_tbl_name:<30}: {len(h_keys)}")
+        for k in h_keys:
+            lines.append(f"            - {k}")
+
+        d_unique = (
+            detail_table[main_key].astype(str).unique().tolist()
+            if main_key in detail_table.columns else []
+        )
+        lines.append(f"  Inserted  {detail_tbl_name:<30}: {len(detail_table)}  ({len(d_unique)} unique PO refs)")
+
+        lines += [f"\n{sep}", "DUPLICATES SKIPPED", sep]
+        lines.append(f"  {header_tbl_name:<40}: {len(self.__dup_header_keys)}")
+        for k in self.__dup_header_keys:
+            lines.append(f"    - {k}")
+        lines.append(f"  {detail_tbl_name:<40}: {len(self.__dup_detail_keys)}")
+        for k in self.__dup_detail_keys:
+            lines.append(f"    - {k}")
+
+        lines.append(sep)
+        return "\n".join(lines)
+
     def __format_onlinesalespo_data(self, df):
         """Format Online Sales PO data to match MSSQL schema."""
         detail_dict = df.to_dict(orient='records')
@@ -429,10 +495,12 @@ class BigqueryBridge(object):
                     if not bq_inserted:
                         requirements_cols = mappings.required_columns[self.__table_version].get(mssql_detail_table_name.lower(), [])
                         self.__log(f"Duplicate entries found in {mssql_detail_table_name} ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
+                        self.__dup_detail_keys.append(str(duplicate_keys[0]))
                         detail_table = detail_table[detail_table[main_key] != duplicate_keys[0]]
                     else:
                         requirements_cols = mappings.required_columns[self.__table_version].get(mssql_header_table_name.lower(), [])
                         self.__log(f"Duplicate entries found in {mssql_header_table_name} ({requirements_cols}): {duplicate_keys}. Skipping insertion for these records.", level="warning")
+                        self.__dup_header_keys.append(str(duplicate_keys[0]))
                         header_table = header_table[header_table[main_key] != duplicate_keys[0]]
                 else:
                     self.__log(f"IntegrityError encountered: {ie}", level="error")
@@ -443,6 +511,11 @@ class BigqueryBridge(object):
                 send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
                 return {"status": "error", "message": str(e)}
         
+        self.__log_section(self.__build_summary(
+            header_table, detail_table, main_key,
+            mssql_header_table_name, mssql_detail_table_name,
+        ))
+
         total_inserted = len(header_table) + len(detail_table)
         if total_inserted > 0:
             send_mail.send_mail(self.__log_body, category="INFO", method=self.__method, module=self.__group_code)
