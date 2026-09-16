@@ -258,6 +258,7 @@ class BigqueryBridge(object):
         publisher = pubsub_v1.PublisherClient()
         topic_path = publisher.topic_path(config.bigquery_project_id, topic)
 
+        orders = []
         published_refs: list[tuple[str, str]] = []
         for _, hrow in filtered.iterrows():
             header_dict = {k: _serializable(v) for k, v in hrow.to_dict().items()}
@@ -274,9 +275,12 @@ class BigqueryBridge(object):
                 for row in detail_table[detail_mask].to_dict(orient='records')
             ]
 
-            payload = {"type": "poul-so-import", "header": header_dict, "lines": lines}
-            publisher.publish(topic_path, json.dumps(payload).encode('utf-8'))
+            orders.append({"header": header_dict, "lines": lines})
             published_refs.append((po_ref, company_name))
+
+        # Publish ONE batch message containing all orders
+        payload = {"type": "poul-so-import-batch", "orders": orders}
+        publisher.publish(topic_path, json.dumps(payload).encode('utf-8'))
 
         trigger_lines = [
             f"\n{sep}",
@@ -284,7 +288,7 @@ class BigqueryBridge(object):
             sep,
             f"  Status : TRIGGERED",
             f"  Topic  : {topic}",
-            f"  Sent   : {len(published_refs)} message(s)",
+            f"  Sent   : 1 batch message ({len(published_refs)} order(s))",
         ]
         for po_ref, co in published_refs:
             trigger_lines.append(f"    - {po_ref}  [{co}]")
