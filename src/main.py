@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from typing import Any, Callable
 from src.logger import logger
-from src.routers import healthrouter, customerpoul_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router, item_category_router, rgmc_item_router, rgmc_item_family_router, rgmc_item_price_router, rgmc_sales_order_router, bigquery_router, mssql_router
+from src.routers import healthrouter, customerpoul_router, customerpouldetail_router, sbic_customer_router, sbic_customer_branch_router, customer_ra_router, tradeportal_router, handoff_router, bc_router, sales_order_router, item_router, customer_router, sales_credit_memo_router, retail_customer_router, sales_return_order_router, rgmc_contact_router, item_category_router, rgmc_item_router, rgmc_item_family_router, rgmc_item_price_router, rgmc_sales_order_router, bigquery_router, mssql_router
 from src.services.send_mail import notify_error
 from sqlalchemy import text
 
@@ -20,6 +20,18 @@ tags_metadata = [
             "description": "SBIC PO Uploader",
             "url": "https://po-uploader-935246372408.us-central1.run.app/",
         },
+    },
+    {
+        "name": "CustomerPOULDetail",
+        "description": "SBIC POUL clean PO line read endpoints (sbic_prod.CustomerPOULDetail).",
+    },
+    {
+        "name": "SBIC Customers",
+        "description": "SBIC customer master data read endpoints (sbic_prod.Customer).",
+    },
+    {
+        "name": "SBIC Customer Branches",
+        "description": "SBIC customer branch master data read endpoints (sbic_prod.CustomerBranch).",
     },
     {
         "name": "CustomerRA",
@@ -97,6 +109,9 @@ try:
     mssql_engine = dbconn.DbConn(logger, 'sbic').main()
     api.include_router(healthrouter)
     api.include_router(customerpoul_router)
+    api.include_router(customerpouldetail_router)
+    api.include_router(sbic_customer_router)
+    api.include_router(sbic_customer_branch_router)
     api.include_router(customer_ra_router)
     api.include_router(tradeportal_router)
     api.include_router(handoff_router)

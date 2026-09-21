@@ -154,6 +154,7 @@ rgmc-gcp-api/
     ├── services/
     │   ├── bc_functions.py              # All BC API calls — token, company lookup, CRUD helpers
     │   ├── bc_api.py                    # Lower-level BC HTTP utilities
+    │   ├── fuzzy_match.py               # Accepting fuzzy text matching (branch/SKU reconciliation)
     │   ├── generic_functions.py         # encrypt/decrypt and other shared utilities
     │   └── send_mail.py                 # SMTP email sender
     ├── models/
@@ -186,7 +187,11 @@ rgmc-gcp-api/
         ├── health.py                    # GET /healthcheck
         ├── bigquery_bridge.py           # BigQuery bridge runner
         ├── sbic_routes/
-        │   ├── CustomerPOUL.py          # POST /customerpoul/runbridge/
+        │   ├── _db.py                   # Shared sbic_prod engine + run_query() helper
+        │   ├── CustomerPOUL.py          # /customerpoul (bridge, list/get, shipto-match, item-match)
+        │   ├── CustomerPOULDetail.py    # /customerpouldetail (list/get)
+        │   ├── Customer.py              # /sbic/customers (list/get)
+        │   ├── CustomerBranch.py        # /sbic/customerbranches (list/get)
         │   ├── CustomerRA.py            # POST /customerra/runbridge/
         │   ├── handoff.py               # SBIC handoff endpoints
         │   └── rate_limiter.py          # Request rate limiter (CustomerRA)
@@ -416,8 +421,24 @@ The `K_REVISION` env var is injected automatically by Cloud Run — it appears i
 |---|---|---|
 | `POST` | `/customerpoul/runbridge/` | Trigger the CustomerPOUL BigQuery bridge job |
 | `POST` | `/customerpoul/runbridge/onlinesalespo/` | Trigger the Online Sales PO bridge job |
+| `GET` | `/customerpoul` | List `CustomerPOUL` headers — filter by `po_ref_number`, `customer_name`, `customer_id`, `po_status`, `limit` |
+| `GET` | `/customerpoul/{po_ref_number}` | Get `CustomerPOUL` header row(s) for a PO ref number |
+| `GET` | `/customerpoul/{po_ref_number}/shipto-match` | Fuzzy-match this PO's `customerBranchName` against BC Ship-To Addresses (`?company=`, `?threshold=`, `?top=`) |
+| `GET` | `/customerpoul/{po_ref_number}/item-match` | Fuzzy-match each line's `customerSKUDesc` against BC Item `displayName` (`?company=`, `?threshold=`, `?top=`) |
+| `GET` | `/customerpouldetail` | List `CustomerPOULDetail` lines — filter by `po_ref_number`, `customer_id`, `limit` |
+| `GET` | `/customerpouldetail/{po_ref_number}` | Get `CustomerPOULDetail` lines for a PO ref number |
+| `GET` | `/sbic/customers` | List `sbic_prod.Customer` rows — filter by `customer_id`, `lookup_code`, `is_active`, `limit` |
+| `GET` | `/sbic/customers/{customer_id}` | Get a single `sbic_prod.Customer` row |
+| `GET` | `/sbic/customerbranches` | List `sbic_prod.CustomerBranch` rows — filter by `customer_branch_id`, `customer_id`, `lookup_code`, `limit` |
+| `GET` | `/sbic/customerbranches/{customer_branch_id}` | Get a single `sbic_prod.CustomerBranch` row |
 
-**Query param:** `?method=manual` (default) or `?method=auto`
+**Query param:** `?method=manual` (default) or `?method=auto` (bridge endpoints only)
+
+The `shipto-match` / `item-match` endpoints read directly from `sbic_prod` and call Business
+Central live — no data is written. `company` defaults to routing `CustomerPOUL.companyName`
+through the same SUNCOAST/SBIC → SBIC, MANILA/MTC → MTC rule the SO import worker uses.
+`threshold` (default `0.35`) is intentionally more accepting than the worker's ship-to
+matcher (`0.5`, plain `SequenceMatcher` ratio) — see `src/services/fuzzy_match.py`.
 
 #### <span style="color:#555">Customer Remittance Advice (RA)</span>
 
