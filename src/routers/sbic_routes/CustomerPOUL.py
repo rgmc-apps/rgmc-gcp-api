@@ -1,8 +1,10 @@
 """CustomerPOUL Related Queries and Functions."""
+import json
 import logging
 from typing import Optional
 from google.cloud import logging as cloud_logging
 from fastapi import HTTPException, Query, Request, status, Depends, APIRouter
+import src.config as config
 from src.routers.bigquery_bridge import BigqueryBridge
 from src.config import pass_key
 from src.routers.sbic_routes.rate_limiter import rate_limit
@@ -69,6 +71,54 @@ async def run_online_sales_po_bridge(request: Request, method: str = 'manual'):
     except Exception as e:
         logger.error(f"Error running BigQuery bridge: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@customerpoul_router.post(
+    "/reprocess-buffer",
+    summary="Trigger a reprocess pass over the Firestore SO-import buffer (so_buffer_*)",
+    dependencies=[Depends(rate_limit)],
+)
+def reprocess_buffer(
+    companies: Optional[str] = Query(
+        None, description="Comma-separated BC company codes to reprocess (e.g. SBIC,MTC). Omit to reprocess all."
+    ),
+):
+    """Publish a poul-so-reprocess-buffer message to the same Pub/Sub topic the POUL SO
+    import worker already subscribes to. The worker pulls every order currently sitting
+    in its Firestore so_buffer_{env} collection for the given company/companies and
+    retries BC Sales Order creation — the exact same retry path buffered orders already
+    go through at the start of the next real batch, just triggered on demand instead of
+    waiting for a new inbound PO.
+    """
+    topic = config.pubsub_poul_so_topic
+    if not topic:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PUBSUB_POUL_SO_TOPIC is not configured",
+        )
+    try:
+        from google.cloud import pubsub_v1
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="google-cloud-pubsub is not installed",
+        )
+
+    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+
+    payload: dict = {"type": "poul-so-reprocess-buffer"}
+    if company_list:
+        payload["companies"] = company_list
+
+    try:
+        publisher = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path(config.bigquery_project_id, topic)
+        publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
+    except Exception as e:
+        logger.error(f"Error publishing poul-so-reprocess-buffer: {e}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+    return {"status": "triggered", "topic": topic, "companies": company_list or "all"}
 
 
 @customerpoul_router.get("", summary="List CustomerPOUL headers")

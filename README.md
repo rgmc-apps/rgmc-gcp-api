@@ -421,6 +421,7 @@ The `K_REVISION` env var is injected automatically by Cloud Run — it appears i
 |---|---|---|
 | `POST` | `/customerpoul/runbridge/` | Trigger the CustomerPOUL BigQuery bridge job |
 | `POST` | `/customerpoul/runbridge/onlinesalespo/` | Trigger the Online Sales PO bridge job |
+| `POST` | `/customerpoul/reprocess-buffer` | Trigger the SO import worker to retry orders sitting in its Firestore `so_buffer_*` collection (`?companies=SBIC,MTC`, default all) _(rate-limited)_ |
 | `GET` | `/customerpoul` | List `CustomerPOUL` headers — filter by `po_ref_number`, `customer_name`, `customer_id`, `po_status`, `limit` |
 | `GET` | `/customerpoul/{po_ref_number}` | Get `CustomerPOUL` header row(s) for a PO ref number |
 | `GET` | `/customerpoul/{po_ref_number}/shipto-match` | Fuzzy-match this PO's `customerBranchName` against BC Ship-To Addresses (`?company=`, `?threshold=`, `?top=`) |
@@ -439,6 +440,11 @@ Central live — no data is written. `company` defaults to routing `CustomerPOUL
 through the same SUNCOAST/SBIC → SBIC, MANILA/MTC → MTC rule the SO import worker uses.
 `threshold` (default `0.35`) is intentionally more accepting than the worker's ship-to
 matcher (`0.5`, plain `SequenceMatcher` ratio) — see `src/services/fuzzy_match.py`.
+
+`reprocess-buffer` only *publishes* to `PUBSUB_POUL_SO_TOPIC` — the actual Firestore read
+and BC Sales Order retry happens in `rgmc-worker-pool`'s `so_import_worker.py`, which
+must be deployed with its `poul-so-reprocess-buffer` message-type handler for this to do
+anything (added alongside this endpoint; see that repo's own history).
 
 #### <span style="color:#555">Customer Remittance Advice (RA)</span>
 
