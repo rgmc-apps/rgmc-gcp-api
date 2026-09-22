@@ -130,10 +130,15 @@ def bc_delete_record(table_endpoint: str, record_id: str, company_name: str = No
 _RGMC_CUSTOM_API = "api/rgmc/rgmccustom/v1.0"
 
 
-def call_rgmc_table(table_endpoint: str, company_name: str = None, odata_filter: str = None, expand: str = None, select: str = None):
-    """Call a company-scoped RGMC custom API table and return (status, value_list)."""
+def call_rgmc_table(table_endpoint: str, company_name: str = None, odata_filter: str = None, expand: str = None, select: str = None, api_version: str = None):
+    """Call a company-scoped RGMC custom API table and return (status, value_list).
+
+    `api_version` overrides the default v1.0 path for tables only published at a newer
+    RGMC custom API version (e.g. `shipToAddresses`, which only exists at v2.0).
+    """
     company_id = get_company_id(company_name)
-    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}"
+    rgmc_api = f"api/rgmc/rgmccustom/{api_version}" if api_version else _RGMC_CUSTOM_API
+    url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{rgmc_api}/companies({company_id})/{table_endpoint}"
     params = []
     if odata_filter:
         params.append(f"$filter={odata_filter}")

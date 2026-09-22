@@ -184,7 +184,7 @@ def match_shipto(
         )
 
     try:
-        http_status, data = call_rgmc_table("shipToAddresses", company_name=bc_company)
+        http_status, data = call_rgmc_table("shipToAddresses", company_name=bc_company, api_version="v2.0")
     except HTTPException:
         raise
     except Exception as e:
