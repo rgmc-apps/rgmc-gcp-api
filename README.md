@@ -441,10 +441,15 @@ through the same SUNCOAST/SBIC → SBIC, MANILA/MTC → MTC rule the SO import w
 `threshold` (default `0.35`) is intentionally more accepting than the worker's ship-to
 matcher (`0.5`, plain `SequenceMatcher` ratio) — see `src/services/fuzzy_match.py`.
 
-`reprocess-buffer` only *publishes* to `PUBSUB_POUL_SO_TOPIC` — the actual Firestore read
-and BC Sales Order retry happens in `rgmc-worker-pool`'s `so_import_worker.py`, which
-must be deployed with its `poul-so-reprocess-buffer` message-type handler for this to do
-anything (added alongside this endpoint; see that repo's own history).
+`reprocess-buffer` only *publishes* to `PUBSUB_POUL_SO_TOPIC` and returns immediately —
+it does not wait for the retry to finish. The actual Firestore read and BC Sales Order
+retry happens asynchronously in `rgmc-worker-pool`'s `so_import_worker.py`, which must be
+deployed with its `poul-so-reprocess-buffer` message-type handler for this to do anything
+(added alongside this endpoint). The worker emails the result to `DEVELOPER_EMAIL` once
+it finishes — subject prefixed "POUL SO Reprocess-Buffer" so it's easy to tell apart from
+a normal inbound-PO import email — covering orders retried/created, orders still failing
+(re-buffered or dropped after `MAX_ATTEMPTS`), and an explicit "nothing to retry" email
+when the buffer was empty.
 
 #### <span style="color:#555">Customer Remittance Advice (RA)</span>
 
