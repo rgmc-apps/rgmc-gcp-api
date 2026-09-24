@@ -264,11 +264,14 @@ class BigqueryBridge(object):
             header_dict = {k: _serializable(v) for k, v in hrow.to_dict().items()}
             po_ref = str(hrow.get('poRefNumber', '(unknown)'))
             company_name = str(hrow.get('companyName', ''))
-            cust_name_raw = hrow.get('customerName')
 
+            # poRefNumber alone is the join key. This used to also require an exact
+            # match on customerName as a disambiguator, but that's a free-text field
+            # independently populated on the header vs. detail rows -- any trivial
+            # whitespace/casing drift between the two silently zeroed out `lines`,
+            # which is why buffered/failed orders always showed empty lines even
+            # though CustomerPOULDetail genuinely had rows for them.
             detail_mask = detail_table['poRefNumber'] == hrow.get('poRefNumber', '')
-            if cust_name_raw is not None and 'customerName' in detail_table.columns:
-                detail_mask &= detail_table['customerName'] == cust_name_raw
 
             lines = [
                 {k: _serializable(v) for k, v in row.items()}
