@@ -45,3 +45,26 @@ def get_customerpouldetail_by_ref(po_ref_number: str):
             detail=f"No CustomerPOULDetail rows found for poRefNumber={po_ref_number!r}",
         )
     return {"record_count": len(rows), "data": rows}
+
+
+@customerpouldetail_router.get(
+    "/bq/{po_ref_number}",
+    summary="Get CustomerPOULDetailBQ lines by PO ref number (the bridge's own staging table)",
+)
+def get_customerpouldetailbq_by_ref(po_ref_number: str):
+    """Unlike CustomerPOULDetail (a reduced-column mirror), CustomerPOULDetailBQ has the
+    exact column set (unitOfMeasurement, poQtyPcs, unitPricePcs, deliveryDate, ...) the
+    BigQuery bridge itself used to build a fresh order's `lines` — used by
+    rgmc-worker-pool's poul-so-sync-from-cloudsql handler so a re-synced line is built
+    identically to how it would have looked in the original Pub/Sub message.
+    """
+    rows = run_query(
+        "SELECT * FROM CustomerPOULDetailBQ WHERE poRefNumber = :po_ref_number",
+        {"po_ref_number": po_ref_number},
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No CustomerPOULDetailBQ rows found for poRefNumber={po_ref_number!r}",
+        )
+    return {"record_count": len(rows), "data": rows}

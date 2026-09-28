@@ -1,6 +1,7 @@
 """CustomerPOUL Related Queries and Functions."""
 import json
 import logging
+import uuid
 from typing import Optional
 from google.cloud import logging as cloud_logging
 from fastapi import HTTPException, Query, Request, status, Depends, APIRouter
@@ -73,22 +74,11 @@ async def run_online_sales_po_bridge(request: Request, method: str = 'manual'):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@customerpoul_router.post(
-    "/reprocess-buffer",
-    summary="Trigger a reprocess pass over the Firestore SO-import buffer (so_buffer_*)",
-    dependencies=[Depends(rate_limit)],
-)
-def reprocess_buffer(
-    companies: Optional[str] = Query(
-        None, description="Comma-separated BC company codes to reprocess (e.g. SBIC,MTC). Omit to reprocess all."
-    ),
-):
-    """Publish a poul-so-reprocess-buffer message to the same Pub/Sub topic the POUL SO
-    import worker already subscribes to. The worker pulls every order currently sitting
-    in its Firestore so_buffer_{env} collection for the given company/companies and
-    retries BC Sales Order creation — the exact same retry path buffered orders already
-    go through at the start of the next real batch, just triggered on demand instead of
-    waiting for a new inbound PO.
+def _publish_poul_so_message(msg_type: str, extra: dict, notify_name, notify_company, notify_department, notify_email) -> dict:
+    """Shared publish path for every poul-so-* trigger message: attaches a run_id
+    (tracked in Firestore reprocess_runs_{env} by rgmc-worker-pool, readable via
+    rgmc-bc-api's GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}) and an
+    optional notify block (the employee to CC on the result emails).
     """
     topic = config.pubsub_poul_so_topic
     if not topic:
@@ -104,21 +94,109 @@ def reprocess_buffer(
             detail="google-cloud-pubsub is not installed",
         )
 
-    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
-
-    payload: dict = {"type": "poul-so-reprocess-buffer"}
-    if company_list:
-        payload["companies"] = company_list
+    run_id = uuid.uuid4().hex
+    payload: dict = {"type": msg_type, "run_id": run_id, **extra}
+    if notify_email:
+        payload["notify"] = {
+            "name": notify_name or "",
+            "company": notify_company or "",
+            "department": notify_department or "",
+            "email": notify_email,
+        }
 
     try:
         publisher = pubsub_v1.PublisherClient()
         topic_path = publisher.topic_path(config.bigquery_project_id, topic)
         publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
     except Exception as e:
-        logger.error(f"Error publishing poul-so-reprocess-buffer: {e}")
+        logger.error(f"Error publishing {msg_type}: {e}")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
-    return {"status": "triggered", "topic": topic, "companies": company_list or "all"}
+    return {"status": "triggered", "topic": topic, "run_id": run_id}
+
+
+@customerpoul_router.post(
+    "/reprocess-buffer",
+    summary="Trigger a reprocess pass over the Firestore SO-import buffer (so_buffer_*)",
+    dependencies=[Depends(rate_limit)],
+)
+def reprocess_buffer(
+    companies: Optional[str] = Query(
+        None, description="Comma-separated BC company codes to reprocess (e.g. SBIC,MTC). Omit to reprocess all."
+    ),
+    notify_name: Optional[str] = Query(None, description="Employee name to notify with the reprocess result"),
+    notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
+    notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
+    notify_email: Optional[str] = Query(None, description="Employee email to CC on the reprocess result emails"),
+):
+    """Publish a poul-so-reprocess-buffer message to the same Pub/Sub topic the POUL SO
+    import worker already subscribes to. The worker pulls every order currently sitting
+    in its Firestore so_buffer_{env} collection for the given company/companies and
+    retries BC Sales Order creation — the exact same retry path buffered orders already
+    go through at the start of the next real batch, just triggered on demand instead of
+    waiting for a new inbound PO.
+
+    notify_* (all optional, but notify_email is what actually triggers a CC) identifies
+    the person who triggered this from the /reconcile page — the worker pool includes
+    notify_email on every result email for this run alongside its own developer alert
+    address, so the requester sees the outcome directly.
+
+    The response's run_id identifies this attempt in Firestore's reprocess_runs_{env}
+    collection (written by rgmc-worker-pool as it processes the message) — poll
+    rgmc-bc-api's GET /bc/custom/v2/so-buffer/reprocess-status/{run_id} to see whether
+    it's still processing, done, or errored.
+    """
+    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    result = _publish_poul_so_message(
+        "poul-so-reprocess-buffer",
+        {"companies": company_list} if company_list else {},
+        notify_name, notify_company, notify_department, notify_email,
+    )
+    result["companies"] = company_list or "all"
+    return result
+
+
+@customerpoul_router.post(
+    "/sync-inserted-orders",
+    summary="Backfill lines onto already-inserted BC sales orders from Cloud SQL CustomerPOUL/CustomerPOULDetail",
+    dependencies=[Depends(rate_limit)],
+)
+def sync_inserted_orders(
+    companies: Optional[str] = Query(
+        None, description="Comma-separated BC company codes to sync (e.g. SBIC,MTC). Omit to sync all."
+    ),
+    create_by: str = Query(
+        "trigger", description="Only CustomerPOUL rows with this createBy are candidates (default 'trigger' — the BigQuery bridge's automated inserts)."
+    ),
+    notify_name: Optional[str] = Query(None, description="Employee name to notify with the sync result"),
+    notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
+    notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
+    notify_email: Optional[str] = Query(None, description="Employee email to CC on the sync result emails"),
+):
+    """Publish a poul-so-sync-from-cloudsql message. The worker re-derives each
+    candidate PO's lines from Cloud SQL (CustomerPOUL filtered by create_by, joined to
+    CustomerPOULDetail by poRefNumber) and adds any that are missing from the BC sales
+    order already created for it (found by externalDocumentNo) — the header is never
+    recreated, only missing lines are added.
+
+    This exists because the BigQuery bridge's header/detail join is a race: if a PO's
+    detail rows land in BigQuery in a later incremental fetch than its header row, the
+    SO import fires with zero lines and never revisits that header — Cloud SQL still
+    has the real detail rows, this just re-syncs them onto the order that's missing
+    them. Same run_id/notify tracking as /reprocess-buffer — poll
+    rgmc-bc-api's GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}.
+    """
+    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    extra = {"create_by": create_by}
+    if company_list:
+        extra["companies"] = company_list
+    result = _publish_poul_so_message(
+        "poul-so-sync-from-cloudsql", extra,
+        notify_name, notify_company, notify_department, notify_email,
+    )
+    result["companies"] = company_list or "all"
+    result["create_by"] = create_by
+    return result
 
 
 @customerpoul_router.get("", summary="List CustomerPOUL headers")
@@ -127,6 +205,10 @@ def list_customerpoul(
     customer_name: Optional[str] = Query(None, description="Substring match on customerName"),
     customer_id: Optional[int] = Query(None, description="Exact customerId match"),
     po_status: Optional[str] = Query(None, description="Exact poStatus match"),
+    company_name: Optional[str] = Query(None, description="Substring match on companyName"),
+    create_by: Optional[str] = Query(
+        None, description="Exact createBy match — e.g. 'trigger' for rows auto-inserted by the BigQuery bridge"
+    ),
     limit: int = Query(100, ge=1, le=1000),
 ):
     conditions: list[str] = []
@@ -143,6 +225,12 @@ def list_customerpoul(
     if po_status:
         conditions.append("poStatus = :po_status")
         params["po_status"] = po_status
+    if company_name:
+        conditions.append("companyName LIKE :company_name")
+        params["company_name"] = f"%{company_name}%"
+    if create_by:
+        conditions.append("createBy = :create_by")
+        params["create_by"] = create_by
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = run_query(f"SELECT TOP {limit} * FROM CustomerPOUL {where} ORDER BY customerPOId DESC", params)
     return {"record_count": len(rows), "data": rows}
