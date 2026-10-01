@@ -258,6 +258,7 @@ def list_customerpoul(
     customer_id: Optional[int] = Query(None, description="Exact customerId match"),
     po_status: Optional[str] = Query(None, description="Exact poStatus match"),
     company_name: Optional[str] = Query(None, description="Substring match on companyName"),
+    company_id: Optional[int] = Query(None, description="Exact companyId match (e.g. SBIC=6, MTC=12 on sbic_prod)"),
     create_by: Optional[str] = Query(
         None, description="Exact createBy match — e.g. 'trigger' for rows auto-inserted by the BigQuery bridge"
     ),
@@ -276,6 +277,9 @@ def list_customerpoul(
     if customer_id is not None:
         conditions.append("customerId = :customer_id")
         params["customer_id"] = customer_id
+    if company_id is not None:
+        conditions.append("companyId = :company_id")
+        params["company_id"] = company_id
     if po_status:
         conditions.append("poStatus = :po_status")
         params["po_status"] = po_status
