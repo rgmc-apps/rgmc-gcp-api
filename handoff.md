@@ -2,13 +2,11 @@
 
 ## Goal
 
-Two parallel goals:
-
 **Goal 1 — rgmc-gcp-api smoke tests**: Verify that the committed RGMC custom API endpoints work correctly against the live Business Central environment. All code is committed on `main`. No code changes needed — this is purely deploy + test.
 
-**Goal 2 — rgmc-bc-api standalone project**: A new standalone FastAPI project was created at `C:\claude\rgmc-bc-api` that contains only the Business Central endpoints extracted from `rgmc-gcp-api`. It needs to be initialized as a git repo, have its `.env` filled in, and be verified that it starts up cleanly.
+**Goal 2 — DROPPED (2026-10-01)**: The handoff previously described a "new standalone FastAPI project" at `C:\claude\rgmc-bc-api` needing git init + `.env` + startup verification. On resume, that path was found to actually be the real `rgmc-apps/rgmc-bc-api` production repo (git history with PRs, `staging` branch, GitHub remote, commits up to "added buffer changes" on 2026-10-01) — not an empty extraction scaffold. Whatever scaffold work the original handoff referred to is gone/superseded. User confirmed: drop Goal 2 entirely, do not touch that directory as part of this work.
 
-**Goal 3 — Generic direct-read query endpoints (completed this session)**: Added two new router modules to `rgmc-gcp-api` for querying BigQuery and all MSSQL databases directly by table without bespoke route code per table.
+**Goal 3 — Generic direct-read query endpoints (completed previous session)**: Added two new router modules to `rgmc-gcp-api` for querying BigQuery and all MSSQL databases directly by table without bespoke route code per table.
 
 ## Current State
 
@@ -42,7 +40,7 @@ All code is clean on `main`. Working tree is clean.
 
 ### rgmc-bc-api (C:\claude\rgmc-bc-api)
 
-**New standalone project created in a previous session.** 43 files written. NOT a git repo yet. NOT tested. No `.env` file yet.
+Out of scope — see Goal 2 note above. This is the real production repo, not a scratch project; leave it alone unless separately instructed.
 
 ## Files Actively Being Edited
 
@@ -74,18 +72,30 @@ No files are mid-edit. All changes are complete.
 
 ## Next Step
 
+**Deploy is on hold** — user chose not to deploy in-session (deploying affects shared infra). Deploy command is ready below for the user to run themselves (gcloud CLI isn't usable from this shell — `gcloud` invocation errors with "Python was not found", so it can't be run by Claude here anyway).
+
+```bash
+gcloud auth login
+gcloud auth configure-docker us-central1-docker.pkg.dev
+gcloud builds submit --tag gcr.io/<PROJECT_ID>/rgmc-gcp-api
+gcloud run deploy rgmc-gcp-api \
+  --image gcr.io/<PROJECT_ID>/rgmc-gcp-api \
+  --platform managed \
+  --region us-central1 \
+  --port 8080 \
+  --set-env-vars BC_ENVIRONMENT=Production,BC_COMPANY=RGMC \
+  --set-secrets BC_CLIENT_SECRET=bc-client-secret:latest,MSSQL_PASSWORD=mssql-password:latest \
+  --allow-unauthenticated
+```
+`<PROJECT_ID>` above is the actual GCP project id (not the app's internal `PROJECT_ID` env var, which defaults to `RGMC0001`) — not recorded anywhere in this repo, user needs to fill it in.
+
+**After deploy — smoke tests:**
+1. `GET /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture/debug` — check `decoded_bytes` > 1000
+2. `GET /bc/custom/item-prices/active?product_no=ITEM001&on_date=2026-06-08` — verify date filter works
+
 **Potential follow-ups for the new endpoints (not yet requested):**
 1. Add a `number_of_rows` query param to `GET /bigquery_routes/by_table/latest` (currently hardcoded `LIMIT 100`, unlike the MSSQL equivalent which accepts `number_of_rows`)
 2. Add auth/rate limiting to `bigquery_routes` and `mssql_routes` (other routes use `rate_limit` from `src/routers/sbic_routes/rate_limiter.py`)
-
-**For rgmc-bc-api — verify it starts cleanly:**
-1. Copy `.env.example` to `.env` and fill in the BC credentials
-2. Run `pip install -r requirements.txt` and then `uvicorn src.main:api --port 8080` from `C:\claude\rgmc-bc-api`
-3. Hit `http://localhost:8080/swagger` — confirm all 13 route groups appear
-
-**For rgmc-gcp-api — smoke tests (deploy first):**
-1. `GET /bc/custom/contacts/4200c49b-6252-f111-a820-7ced8db4f5d6/picture/debug` — check `decoded_bytes` > 1000
-2. `GET /bc/custom/item-prices/active?product_no=ITEM001&on_date=2026-06-08` — verify date filter works
 
 ## Context & Gotchas
 

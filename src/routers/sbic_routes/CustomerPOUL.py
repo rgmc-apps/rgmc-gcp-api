@@ -199,6 +199,58 @@ def sync_inserted_orders(
     return result
 
 
+@customerpoul_router.post(
+    "/backfill-from-cloudsql",
+    summary="Create missing BC sales orders from Cloud SQL CustomerPOUL/CustomerPOULDetail",
+    dependencies=[Depends(rate_limit)],
+)
+def backfill_from_cloudsql(
+    companies: Optional[str] = Query(
+        None, description="Comma-separated BC company codes to backfill (e.g. SBIC,MTC). Omit to backfill all."
+    ),
+    create_by: str = Query(
+        "trigger", description="Only CustomerPOUL rows with this createBy are candidates (default 'trigger' — the BigQuery bridge's automated inserts)."
+    ),
+    date_from: Optional[str] = Query(None, description="Only CustomerPOUL rows with poDate >= this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Only CustomerPOUL rows with poDate <= this date (YYYY-MM-DD)"),
+    notify_name: Optional[str] = Query(None, description="Employee name to notify with the backfill result"),
+    notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
+    notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
+    notify_email: Optional[str] = Query(None, description="Employee email to CC on the backfill result emails"),
+):
+    """Publish a poul-so-backfill-from-cloudsql message. For every CustomerPOUL row
+    matching create_by (and, if given, the poDate range), the worker creates a FRESH
+    BC sales order (header + lines) from CustomerPOUL/CustomerPOULDetailBQ — the
+    opposite skip condition from /sync-inserted-orders, which only acts on a PO whose
+    BC order already exists. Here, a PO whose externalDocumentNo already matches an
+    existing BC sales order is skipped outright (never re-created, never touched).
+
+    Any PO that can't be fully resolved (no ship-to/customer/item match, or BC itself
+    rejects it) is buffered via the same Firestore so_buffer_{env} mechanism every
+    other import path uses, so it shows up on /reconcile for manual reconciliation
+    instead of silently failing. Same run_id/notify tracking as /reprocess-buffer and
+    /sync-inserted-orders — poll rgmc-bc-api's
+    GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}.
+    """
+    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    extra = {"create_by": create_by}
+    if company_list:
+        extra["companies"] = company_list
+    if date_from:
+        extra["date_from"] = date_from
+    if date_to:
+        extra["date_to"] = date_to
+    result = _publish_poul_so_message(
+        "poul-so-backfill-from-cloudsql", extra,
+        notify_name, notify_company, notify_department, notify_email,
+    )
+    result["companies"] = company_list or "all"
+    result["create_by"] = create_by
+    result["date_from"] = date_from
+    result["date_to"] = date_to
+    return result
+
+
 @customerpoul_router.get("", summary="List CustomerPOUL headers")
 def list_customerpoul(
     po_ref_number: Optional[str] = Query(None, description="Exact poRefNumber match"),
@@ -209,6 +261,8 @@ def list_customerpoul(
     create_by: Optional[str] = Query(
         None, description="Exact createBy match — e.g. 'trigger' for rows auto-inserted by the BigQuery bridge"
     ),
+    date_from: Optional[str] = Query(None, description="Only rows with poDate >= this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Only rows with poDate <= this date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000),
 ):
     conditions: list[str] = []
@@ -231,6 +285,14 @@ def list_customerpoul(
     if create_by:
         conditions.append("createBy = :create_by")
         params["create_by"] = create_by
+    if date_from:
+        conditions.append("poDate >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        # Inclusive of the whole end day — poDate is a datetime column, so a bare
+        # "<= date_to" would exclude same-day rows with a non-midnight time component.
+        conditions.append("poDate < DATEADD(day, 1, CAST(:date_to AS date))")
+        params["date_to"] = date_to
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = run_query(f"SELECT TOP {limit} * FROM CustomerPOUL {where} ORDER BY customerPOId DESC", params)
     return {"record_count": len(rows), "data": rows}
