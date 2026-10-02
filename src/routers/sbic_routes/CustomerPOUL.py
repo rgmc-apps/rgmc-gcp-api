@@ -211,15 +211,17 @@ def backfill_from_cloudsql(
     create_by: str = Query(
         "trigger", description="Only CustomerPOUL rows with this createBy are candidates (default 'trigger' — the BigQuery bridge's automated inserts)."
     ),
-    date_from: Optional[str] = Query(None, description="Only CustomerPOUL rows with poDate >= this date (YYYY-MM-DD)"),
-    date_to: Optional[str] = Query(None, description="Only CustomerPOUL rows with poDate <= this date (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(None, description="Only CustomerPOUL rows with createDate >= this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Only CustomerPOUL rows with createDate <= this date (YYYY-MM-DD)"),
     notify_name: Optional[str] = Query(None, description="Employee name to notify with the backfill result"),
     notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
     notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
     notify_email: Optional[str] = Query(None, description="Employee email to CC on the backfill result emails"),
 ):
     """Publish a poul-so-backfill-from-cloudsql message. For every CustomerPOUL row
-    matching create_by (and, if given, the poDate range), the worker creates a FRESH
+    matching create_by (and, if given, the createDate range — when the row was
+    inserted into CustomerPOUL, not poDate, the original PO date from the source
+    ERP), the worker creates a FRESH
     BC sales order (header + lines) from CustomerPOUL/CustomerPOULDetailBQ — the
     opposite skip condition from /sync-inserted-orders, which only acts on a PO whose
     BC order already exists. Here, a PO whose externalDocumentNo already matches an
@@ -262,8 +264,8 @@ def list_customerpoul(
     create_by: Optional[str] = Query(
         None, description="Exact createBy match — e.g. 'trigger' for rows auto-inserted by the BigQuery bridge"
     ),
-    date_from: Optional[str] = Query(None, description="Only rows with poDate >= this date (YYYY-MM-DD)"),
-    date_to: Optional[str] = Query(None, description="Only rows with poDate <= this date (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(None, description="Only rows with createDate >= this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Only rows with createDate <= this date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000),
 ):
     conditions: list[str] = []
@@ -290,12 +292,12 @@ def list_customerpoul(
         conditions.append("createBy = :create_by")
         params["create_by"] = create_by
     if date_from:
-        conditions.append("poDate >= :date_from")
+        conditions.append("createDate >= :date_from")
         params["date_from"] = date_from
     if date_to:
-        # Inclusive of the whole end day — poDate is a datetime column, so a bare
+        # Inclusive of the whole end day — createDate is a datetime column, so a bare
         # "<= date_to" would exclude same-day rows with a non-midnight time component.
-        conditions.append("poDate < DATEADD(day, 1, CAST(:date_to AS date))")
+        conditions.append("createDate < DATEADD(day, 1, CAST(:date_to AS date))")
         params["date_to"] = date_to
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = run_query(f"SELECT TOP {limit} * FROM CustomerPOUL {where} ORDER BY customerPOId DESC", params)
