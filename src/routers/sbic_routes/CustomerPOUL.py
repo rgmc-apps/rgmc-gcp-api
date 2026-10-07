@@ -300,7 +300,10 @@ def list_customerpoul(
         conditions.append("createDate < DATEADD(day, 1, CAST(:date_to AS date))")
         params["date_to"] = date_to
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    rows = run_query(f"SELECT TOP {limit} * FROM CustomerPOUL {where} ORDER BY customerPOId DESC", params)
+    # ORDER BY createDate, not customerPOId: "re-PO" rows use customerPOId=-1 as a
+    # sentinel, which sorted dead last under customerPOId DESC and silently fell outside
+    # the TOP {limit} window on every caller (sync, backfill) regardless of recency.
+    rows = run_query(f"SELECT TOP {limit} * FROM CustomerPOUL {where} ORDER BY createDate DESC", params)
     return {"record_count": len(rows), "data": rows}
 
 
