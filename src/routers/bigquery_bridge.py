@@ -559,9 +559,35 @@ class BigqueryBridge(object):
         the manual-trigger page's BigQuery-lookup feature always routes these into the
         SO-import buffer for a human to review first — it never attempts an immediate
         automatic BC import.
+
+        header_rows/detail_rows arrive here as plain dicts that crossed an HTTP/JSON
+        hop (BigQuery search -> manual-trigger page -> here) — unlike main()'s in-process
+        pandas_gbq pull, which hands __rename_columns real pandas Timestamp/date objects
+        directly. A BigQuery TIMESTAMP serializes over JSON as a microsecond-precision
+        ISO string (e.g. "2026-10-07T09:05:56.146358"), which MSSQL's implicit
+        string->datetime conversion rejects outright (confirmed live, 2026-10-07:
+        "Conversion failed when converting date and/or time from character string").
+        mappings.py's date_columns never covers created_at for either table, or
+        po_date/delivery_date for the detail table at all, so __rename_columns alone
+        would leave these as raw strings. Normalized explicitly here, before renaming,
+        so to_sql() binds real datetime values instead of strings MSSQL has to parse.
         """
-        header_table = self.__rename_columns('customerpoulbq', pandas.DataFrame(header_rows))
-        detail_table = self.__rename_columns('customerpouldetailbq', pandas.DataFrame(detail_rows))
+        header_df = pandas.DataFrame(header_rows)
+        detail_df = pandas.DataFrame(detail_rows)
+
+        def _parsed_utc_naive(series):
+            parsed = pandas.to_datetime(series, errors="coerce", format="mixed", yearfirst=True, dayfirst=True, utc=True)
+            return parsed.dt.tz_localize(None)
+
+        for df in (header_df, detail_df):
+            if "created_at" in df.columns:
+                df["created_at"] = _parsed_utc_naive(df["created_at"])
+        for col in ("po_date", "delivery_date"):
+            if col in detail_df.columns:
+                detail_df[col] = _parsed_utc_naive(detail_df[col]).dt.strftime("%Y-%m-%d")
+
+        header_table = self.__rename_columns('customerpoulbq', header_df)
+        detail_table = self.__rename_columns('customerpouldetailbq', detail_df)
         return self.__insert_dataframes(
             header_table, detail_table, 'CustomerPOULBQ', 'CustomerPOULDetailBQ',
             main_key='poRefNumber', trigger_so_import=False,
