@@ -47,9 +47,14 @@ async def search_document_ai(
         conditions.append("DATE(created_at) <= @date_to")
         params.append({"name": "date_to", "parameterType": {"type": "DATE"}, "parameterValue": {"value": date_to}})
 
+    # config.bigquery_dataset_id is already a fully-qualified "project.dataset" string
+    # (confirmed live — a separate `{project_id}.{dataset_id}` prefix 500'd with a
+    # doubled-up "project:project.dataset" BigQuery error), same as the pre-existing
+    # by_table/value and by_table/latest routes below, which only ever do
+    # `{dataset_id}.{table_name}` with no separate project prefix.
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     header_query = (
-        f"SELECT * FROM `{config.bigquery_project_id}.{config.bigquery_dataset_id}.int_document_ai` "
+        f"SELECT * FROM `{config.bigquery_dataset_id}.int_document_ai` "
         f"{where} ORDER BY created_at DESC LIMIT @limit"
     )
     header_params = params + [{"name": "limit", "parameterType": {"type": "INT64"}, "parameterValue": {"value": str(limit)}}]
@@ -61,7 +66,7 @@ async def search_document_ai(
         details: list = []
         if po_refs:
             detail_query = (
-                f"SELECT * FROM `{config.bigquery_project_id}.{config.bigquery_dataset_id}.int_document_ai_detail` "
+                f"SELECT * FROM `{config.bigquery_dataset_id}.int_document_ai_detail` "
                 "WHERE po_ref_number IN UNNEST(@po_refs)"
             )
             detail_params = [{
