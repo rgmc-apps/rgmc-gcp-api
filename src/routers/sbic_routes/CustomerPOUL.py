@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Optional
 from google.cloud import logging as cloud_logging
-from fastapi import HTTPException, Query, Request, status, Depends, APIRouter
+from fastapi import HTTPException, Query, Request, status, Depends, APIRouter, Body
 import src.config as config
 from src.routers.bigquery_bridge import BigqueryBridge
 from src.config import pass_key
@@ -51,6 +51,35 @@ def _get_latest_header(po_ref_number: str) -> dict:
             detail=f"No CustomerPOUL row found for poRefNumber={po_ref_number!r}",
         )
     return rows[0]
+
+@customerpoul_router.post(
+    "/insert-from-bigquery",
+    summary="Insert caller-picked int_document_ai/int_document_ai_detail rows into CustomerPOULBQ/CustomerPOULDetailBQ",
+    dependencies=[Depends(rate_limit)],
+)
+async def insert_from_bigquery(
+    headers: list = Body(..., description="int_document_ai rows (BigQuery/snake_case column names) to insert"),
+    details: list = Body([], description="int_document_ai_detail rows (BigQuery/snake_case column names) belonging to those headers"),
+):
+    """Manual counterpart to /runbridge/ — instead of pulling everything new since the
+    last automated run, inserts exactly the caller-selected rows (from the
+    GET /bigquery_routes/document-ai/search results) into the same CustomerPOULBQ/
+    CustomerPOULDetailBQ staging tables the automated bridge writes to, so the same
+    AFTER INSERT trigger on the header table promotes them into CustomerPOUL/
+    CustomerPOULDetail exactly as it would for an automated insert. Does NOT publish
+    the SO-import Pub/Sub trigger — the manual-trigger page always routes these into
+    the Firestore buffer separately for human review first, never an immediate
+    automatic BC import attempt.
+    """
+    if not headers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="headers must not be empty")
+    try:
+        bridge = BigqueryBridge(logger, method="manual", group_code="customerpoul")
+        return bridge.insert_selected_records(headers, details)
+    except Exception as e:
+        logger.error(f"Error inserting selected BigQuery records into MSSQL: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @customerpoul_router.post("/runbridge/")
 async def run_customerpoul_bridge(request: Request, method: str = 'manual'):

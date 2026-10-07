@@ -460,14 +460,28 @@ class BigqueryBridge(object):
         header_table = self.__rename_columns(mssql_header_table_name.lower(), header_table)
         detail_table = self.__rename_columns(mssql_detail_table_name.lower(), detail_table)
 
+        return self.__insert_dataframes(
+            header_table, detail_table, mssql_header_table_name, mssql_detail_table_name,
+            main_key, trigger_so_import=(self.__group_code == 'customerpoul'),
+        )
+
+    def __insert_dataframes(self, header_table, detail_table, mssql_header_table_name,
+                             mssql_detail_table_name, main_key, trigger_so_import=True):
+        """Insert header_table/detail_table into their MSSQL staging tables — detail
+        FIRST, header SECOND (an AFTER INSERT trigger on the header table promotes
+        matching rows into CustomerPOUL/CustomerPOULDetail, so the detail rows it joins
+        against must already exist by the time the header insert fires it). Retries
+        once per duplicate-key IntegrityError, dropping just the offending row and
+        trying again, same as main()'s original inline loop.
+        """
         continue_execution = True
         while continue_execution:
             try:
                 bq_inserted = False
                 self.__log("Attempting to insert data into MSSQL. Total Records - {}: {}, {}: {}".format(mssql_header_table_name,
-                                                                                                         len(header_table), 
-                                                                                                         mssql_detail_table_name, 
-                                                                                                         len(detail_table)), 
+                                                                                                         len(header_table),
+                                                                                                         mssql_detail_table_name,
+                                                                                                         len(detail_table)),
                                                                                                          level="info")
                 with self.__mssql_engine.connect() as connection:
                     uldetail_bq = detail_table.to_sql(
@@ -489,12 +503,12 @@ class BigqueryBridge(object):
                     )
                 continue_execution = False
                 self.__log("Data inserted successfully into MSSQL.", level="info")
-                if self.__group_code == 'customerpoul':
+                if trigger_so_import:
                     self.__trigger_so_import(header_table, detail_table)
-                self.__log("Inserted Records - {}: {}, {}: {}".format(mssql_header_table_name, 
-                                                                      ul_bq, 
-                                                                      mssql_detail_table_name, 
-                                                                      uldetail_bq), 
+                self.__log("Inserted Records - {}: {}, {}: {}".format(mssql_header_table_name,
+                                                                      ul_bq,
+                                                                      mssql_detail_table_name,
+                                                                      uldetail_bq),
                                                                       level="info")
             except IntegrityError as ie:
                 duplicate_keys = self.__extract_duplicate_key(str(ie))
@@ -517,7 +531,7 @@ class BigqueryBridge(object):
                 self.__log(f"Error inserting data into MSSQL: {e}", level="error")
                 send_mail.send_mail(self.__log_body, category="ERROR", method=self.__method, module=self.__group_code)
                 return {"status": "error", "message": str(e)}
-        
+
         self.__log_section(self.__build_summary(
             header_table, detail_table, main_key,
             mssql_header_table_name, mssql_detail_table_name,
@@ -533,6 +547,25 @@ class BigqueryBridge(object):
             "message": "Data transfer from BigQuery to MSSQL completed successfully.",
             "details": {"header_records": len(header_table),
                         "detail_records": len(detail_table)}}
+
+    def insert_selected_records(self, header_rows: list, detail_rows: list) -> dict:
+        """Insert caller-picked `int_document_ai`/`int_document_ai_detail` rows (as dicts
+        with the original BigQuery/snake_case column names) into CustomerPOULBQ/
+        CustomerPOULDetailBQ — same column renaming/cleaning/insert-ordering main() uses
+        for its automated incremental pull, just for an explicit subset instead of
+        "everything new since the last run".
+
+        Deliberately called with trigger_so_import=False: unlike main()'s automated path,
+        the manual-trigger page's BigQuery-lookup feature always routes these into the
+        SO-import buffer for a human to review first — it never attempts an immediate
+        automatic BC import.
+        """
+        header_table = self.__rename_columns('customerpoulbq', pandas.DataFrame(header_rows))
+        detail_table = self.__rename_columns('customerpouldetailbq', pandas.DataFrame(detail_rows))
+        return self.__insert_dataframes(
+            header_table, detail_table, 'CustomerPOULBQ', 'CustomerPOULDetailBQ',
+            main_key='poRefNumber', trigger_so_import=False,
+        )
 
 if __name__ == "__main__":
     # For local testing
