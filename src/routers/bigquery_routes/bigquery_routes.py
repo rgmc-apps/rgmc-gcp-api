@@ -1,5 +1,6 @@
 """BigQuery direct-read endpoints."""
 import logging
+import re
 import pandas_gbq
 import src.config as config
 from typing import Optional
@@ -26,7 +27,7 @@ def _run_parameterized(query: str, query_parameters: list) -> "pandas.DataFrame"
 
 @bigquery_router.get("/document-ai/search", summary="Search int_document_ai headers (+ their int_document_ai_detail lines)")
 async def search_document_ai(
-    po_ref_number: Optional[str] = Query(None, description="Exact poRefNumber match"),
+    po_ref_number: Optional[str] = Query(None, description="One or more exact poRefNumber values — comma/newline/whitespace separated for multiple"),
     customer_name: Optional[str] = Query(None, description="Substring match against customer_name"),
     date_from: Optional[str] = Query(None, description="created_at >= this date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="created_at <= this date (YYYY-MM-DD), inclusive"),
@@ -35,8 +36,13 @@ async def search_document_ai(
     conditions = []
     params = []
     if po_ref_number:
-        conditions.append("po_ref_number = @po_ref_number")
-        params.append({"name": "po_ref_number", "parameterType": {"type": "STRING"}, "parameterValue": {"value": po_ref_number}})
+        po_refs = [p for p in re.split(r"[,\s]+", po_ref_number.strip()) if p]
+        conditions.append("po_ref_number IN UNNEST(@po_ref_numbers)")
+        params.append({
+            "name": "po_ref_numbers",
+            "parameterType": {"type": "ARRAY", "arrayType": {"type": "STRING"}},
+            "parameterValue": {"arrayValues": [{"value": p} for p in po_refs]},
+        })
     if customer_name:
         conditions.append("LOWER(customer_name) LIKE @customer_name")
         params.append({"name": "customer_name", "parameterType": {"type": "STRING"}, "parameterValue": {"value": f"%{customer_name.lower()}%"}})
