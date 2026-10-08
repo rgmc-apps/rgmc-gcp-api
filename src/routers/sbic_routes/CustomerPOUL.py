@@ -197,6 +197,9 @@ def sync_inserted_orders(
     create_by: str = Query(
         "trigger", description="Only CustomerPOUL rows with this createBy are candidates (default 'trigger' — the BigQuery bridge's automated inserts)."
     ),
+    po_ref_numbers: Optional[str] = Query(
+        None, description="Comma-separated exact poRefNumber values to narrow the sync to (e.g. a single PO from the BigQuery Lookup tab's Quick Align). Omit to sync every create_by match."
+    ),
     notify_name: Optional[str] = Query(None, description="Employee name to notify with the sync result"),
     notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
     notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
@@ -216,15 +219,19 @@ def sync_inserted_orders(
     rgmc-bc-api's GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}.
     """
     company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    po_ref_list = [p.strip() for p in po_ref_numbers.split(",") if p.strip()] if po_ref_numbers else None
     extra = {"create_by": create_by}
     if company_list:
         extra["companies"] = company_list
+    if po_ref_list:
+        extra["po_ref_numbers"] = po_ref_list
     result = _publish_poul_so_message(
         "poul-so-sync-from-cloudsql", extra,
         notify_name, notify_company, notify_department, notify_email,
     )
     result["companies"] = company_list or "all"
     result["create_by"] = create_by
+    result["po_ref_numbers"] = po_ref_list or "all"
     return result
 
 
