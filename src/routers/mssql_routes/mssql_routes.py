@@ -1,4 +1,5 @@
 """Generic SQL Server database direct-read endpoints (all db_mappings databases)."""
+import base64
 import logging
 from google.cloud import logging as cloud_logging
 from fastapi import APIRouter, HTTPException, Query, status
@@ -7,6 +8,17 @@ from sqlalchemy.exc import OperationalError
 from src.db.dbconn import DbConn
 from src.logger import logger as app_logger
 import src.mappings as mappings
+
+
+def _serialize_value(value):
+    """JSON can't carry raw bytes — base64-encode binary column values (e.g. varbinary/image)."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return base64.b64encode(bytes(value)).decode("ascii")
+    return value
+
+
+def _serialize_row(row_mapping) -> dict:
+    return {key: _serialize_value(value) for key, value in dict(row_mapping).items()}
 
 client = cloud_logging.Client()
 client.setup_logging()
@@ -74,7 +86,7 @@ async def get_by_value(
         query = "SELECT * FROM {} WHERE {} = :where_value".format(table_name, where_column)
         with engine.connect() as conn:
             result = conn.execute(text(query), {"where_value": where_value})
-            rows = [dict(row._mapping) for row in result]
+            rows = [_serialize_row(row._mapping) for row in result]
         return {"record_count": len(rows), "data": rows}
     except HTTPException:
         raise
@@ -95,7 +107,7 @@ async def get_latest(
         query = "SELECT TOP {} * FROM {} ORDER BY {} DESC".format(number_of_rows, table_name, date_column)
         with engine.connect() as conn:
             result = conn.execute(text(query))
-            rows = [dict(row._mapping) for row in result]
+            rows = [_serialize_row(row._mapping) for row in result]
         return {"record_count": len(rows), "data": rows}
     except HTTPException:
         raise
