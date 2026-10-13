@@ -24,11 +24,15 @@ customerpoul_router = APIRouter(prefix="/customerpoul", tags=["CustomerPOUL"])
 # Company routing rule mirrored from the SO import worker (mssql_bc_mapping.txt §5):
 # CustomerPOUL.companyName contains one of these keywords -> BC company code.
 # Checked in order; first match wins.
+# No MTC entry — BC Production has no "MTC" company (confirmed live), so routing a
+# Manila Taste Curators row there just 500s on the resulting BC call ("Company 'MTC'
+# not found in Business Central"). Leaving the keyword unmapped makes
+# _resolve_bc_company return None instead, which match_shipto/match_items already
+# handle as a 400 ("Could not resolve a BC company...; pass ?company=") rather than a
+# doomed call to BC.
 _COMPANY_KEYWORD_MAP: list[tuple[str, str]] = [
     ("SUNCOAST", "SBIC"),
     ("SBIC", "SBIC"),
-    ("MANILA", "MTC"),
-    ("MTC", "MTC"),
 ]
 
 
