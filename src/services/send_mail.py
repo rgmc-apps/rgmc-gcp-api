@@ -93,6 +93,66 @@ def send_mail(body: str, category: str = "Info", method: str = "manual", module:
             print(f"Error sending email: {e}")
 
 
+def send_generic_mail(subject: str, body: str, recipients: list[str] | None = None) -> bool:
+    """Send a plain, custom-subject email. Used by other internal services (e.g. the
+    Attribute Checker) via the POST /notifications/send-mail route, so they don't need
+    their own SMTP credentials — this service already owns them.
+
+    Returns True if the message was sent to at least one recipient.
+    """
+    smtp_server = config.mail_server
+    smtp_port = config.mail_port
+    sender_email = config.mail_sender
+    sender_password = config.mail_password
+    recipient_list = recipients or [r.strip() for r in config.mail_recipient.split(",") if r.strip()]
+
+    body_html = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial,sans-serif;">
+        <table align="center" width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:640px;background:#ffffff;margin-top:20px;border-radius:8px;overflow:hidden;">
+            <tr>
+                <td style="background-color:#4CAF50;padding:20px;text-align:center;color:white;font-size:18px;font-weight:bold;">
+                    {subject}
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:24px;color:#333333;font-size:13px;line-height:1.6;font-family:'Courier New',monospace;white-space:pre-wrap;word-break:break-all;">
+                    {body_html}
+                </td>
+            </tr>
+            <tr>
+                <td style="background-color:#eeeeee;padding:14px;text-align:center;font-size:11px;color:#777777;">
+                    &copy; {datetime.now(timezone.utc).year} RGMC Group IT Department &mdash; automated message, do not reply.
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
+    sent_any = False
+    for recipient in recipient_list:
+        msg = EmailMessage()
+        msg["From"] = sender_email
+        msg["To"] = recipient
+        msg["Subject"] = subject
+        msg.set_content(body)
+        msg.add_alternative(html_content, subtype="html")
+        try:
+            context = ssl.create_default_context()
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls(context=context)
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+            sent_any = True
+        except Exception as e:
+            logger.error(f"send_generic_mail: failed to send to {recipient}: {e}")
+    return sent_any
+
+
 def notify_error(method: str, url: str, status_code: int, body: str, client_ip: str = "") -> None:
     """Send a developer alert email for 500/502 API responses.
 
