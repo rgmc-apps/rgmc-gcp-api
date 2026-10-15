@@ -240,6 +240,41 @@ def sync_inserted_orders(
 
 
 @customerpoul_router.post(
+    "/apply-shipto-fixes",
+    summary="Trigger a batch-apply pass over queued Ship-to Code fixes (so_shipto_fixes_*)",
+    dependencies=[Depends(rate_limit)],
+)
+def apply_shipto_fixes(
+    companies: Optional[str] = Query(
+        None, description="Comma-separated BC company codes to apply fixes for (e.g. SBIC,MTC). Omit to apply every pending fix regardless of company."
+    ),
+    notify_name: Optional[str] = Query(None, description="Employee name to notify with the apply result"),
+    notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
+    notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
+    notify_email: Optional[str] = Query(None, description="Employee email to CC on the apply result emails"),
+):
+    """Publish a poul-so-shipto-patch-batch message to the same Pub/Sub topic the POUL
+    SO import worker already subscribes to. The worker pulls every pending fix queued
+    from the /reconcile page's Missing Ship-To tab (rgmc-bc-api's POST
+    .../so-buffer/shipto-fixes — saved instantly when a human picks a ship-to candidate,
+    with no BC write at that point) and PATCHes each named Sales Order's Ship-to Code in
+    BC, re-checking eligibility (still Open, still submittedBy "SBIC AI Uploading",
+    shipToCode still blank) fresh immediately before each write.
+
+    Same run_id/notify tracking as /reprocess-buffer — poll rgmc-bc-api's
+    GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}.
+    """
+    company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    result = _publish_poul_so_message(
+        "poul-so-shipto-patch-batch",
+        {"companies": company_list} if company_list else {},
+        notify_name, notify_company, notify_department, notify_email,
+    )
+    result["companies"] = company_list or "all"
+    return result
+
+
+@customerpoul_router.post(
     "/backfill-from-cloudsql",
     summary="Create missing BC sales orders from Cloud SQL CustomerPOUL/CustomerPOULDetail",
     dependencies=[Depends(rate_limit)],
