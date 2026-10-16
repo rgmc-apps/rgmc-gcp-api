@@ -30,9 +30,7 @@ class BigqueryBridge(object):
         self.__dup_detail_keys: list[str] = []
         self.__dataset_id = "{}.{}".format(config.bigquery_project_id,
             mappings.bigquery_dataset_mappings[self.__table_version].get(group_code, 'sbic_int'))
-        self.__lock_connection = None
-        self.__lock_transaction = None
-
+        
     
     def __log(self, message, level="info"):
         if level == "info":
@@ -48,65 +46,6 @@ class BigqueryBridge(object):
         self.__logger.info(content)
         self.__log_body += f"\n{content}"
         
-    def __acquire_run_lock(self, wait_seconds=120):
-        """Acquire a SQL Server app lock named after this bridge's group_code before
-        touching BigQuery/MSSQL, so overlapping Eventarc-triggered invocations (a single
-        Document AI batch or BigQuery insert burst can fire /handoff/runbridge/ several
-        times concurrently -- see handoff.md's "8x concurrency" item) never run main()
-        for the same group_code at the same time and race on the same incremental
-        watermark (MAX(createdAt) in MSSQL) -- the likely cause of silently dropped
-        CustomerPOULBQ/CustomerPOULDetailBQ rows under concurrent load.
-
-        Blocks up to wait_seconds (rather than failing immediately) so a queued caller
-        still runs its own pass once the lock frees up, instead of silently skipping a
-        row that may only ever be new in this one invocation. @LockOwner='Transaction'
-        (not 'Session') so the lock releases on commit/rollback regardless of
-        SQLAlchemy's connection pool keeping the physical connection alive afterward.
-        """
-        lock_name = f"rgmc_bigquery_bridge_{self.__group_code}"
-        connection = self.__mssql_engine.connect()
-        transaction = connection.begin()
-        try:
-            result = connection.execute(
-                text(
-                    "DECLARE @res INT; "
-                    "EXEC @res = sp_getapplock @Resource = :lock_name, @LockMode = 'Exclusive', "
-                    "@LockOwner = 'Transaction', @LockTimeout = :timeout_ms; "
-                    "SELECT @res;"
-                ),
-                {"lock_name": lock_name, "timeout_ms": wait_seconds * 1000},
-            ).scalar()
-        except Exception as e:
-            transaction.rollback()
-            connection.close()
-            self.__log(f"Error acquiring run lock '{lock_name}': {e}", level="error")
-            return False
-
-        if result is not None and result >= 0:
-            self.__lock_connection = connection
-            self.__lock_transaction = transaction
-            return True
-
-        transaction.rollback()
-        connection.close()
-        return False
-
-    def __release_run_lock(self):
-        """Release the app lock acquired by __acquire_run_lock, if any. Rolling back is
-        safe -- the lock transaction never does any data writes of its own."""
-        if self.__lock_transaction is not None:
-            try:
-                self.__lock_transaction.rollback()
-            except Exception:
-                pass
-        if self.__lock_connection is not None:
-            try:
-                self.__lock_connection.close()
-            except Exception:
-                pass
-        self.__lock_transaction = None
-        self.__lock_connection = None
-
     def __get_last_run_timestamp(self):
         """Get the last run timestamp from MSSQL table."""
         max_retries = 3
@@ -540,54 +479,42 @@ class BigqueryBridge(object):
     
     def main(self):
         """Bigquery Bridge Main Function."""
-        if not self.__acquire_run_lock():
-            self.__log(
-                f"Could not acquire run lock for group_code '{self.__group_code}' "
-                f"(another run held it for the full wait window) -- skipping this "
-                f"invocation.",
-                level="warning",
-            )
-            return {"status": "skipped", "message": "Another run is already in progress for this group_code."}
+        self.__log("BigQuery to MSSQL Bridge initialized.", level="info")
+        self.__get_last_run_timestamp()
+        self.__log(f"Last run timestamp obtained: {self.__last_run_timestamp}", level="info")
+        
+        self.__log("Fetching data from BigQuery...", level="info")
+        variable_mapping = mappings.variable_mappings[self.__table_version].get(self.__group_code, {})
+        bq_header_table_name = variable_mapping.get('bq_header_name', 'DocumentAIBQ')
+        bq_detail_table_name = variable_mapping.get('bq_detail_name', 'DocumentAIDetailBQ')
 
-        try:
-            self.__log("BigQuery to MSSQL Bridge initialized.", level="info")
-            self.__get_last_run_timestamp()
-            self.__log(f"Last run timestamp obtained: {self.__last_run_timestamp}", level="info")
+        mssql_header_table_name = variable_mapping.get('mssql_header_name', 'CustomerPOULBQ')
+        mssql_detail_table_name = variable_mapping.get('mssql_detail_name', 'CustomerPOULDetailBQ')
+        main_key = variable_mapping.get('main_key', 'poRefNumber')
 
-            self.__log("Fetching data from BigQuery...", level="info")
-            variable_mapping = mappings.variable_mappings[self.__table_version].get(self.__group_code, {})
-            bq_header_table_name = variable_mapping.get('bq_header_name', 'DocumentAIBQ')
-            bq_detail_table_name = variable_mapping.get('bq_detail_name', 'DocumentAIDetailBQ')
+        if self.__group_code in ('customerpoul', 'customerra'):
+            header_table = self.__get_bigquery_data(bq_header_table_name)
+            detail_table = self.__get_bigquery_data(bq_detail_table_name)
 
-            mssql_header_table_name = variable_mapping.get('mssql_header_name', 'CustomerPOULBQ')
-            mssql_detail_table_name = variable_mapping.get('mssql_detail_name', 'CustomerPOULDetailBQ')
-            main_key = variable_mapping.get('main_key', 'poRefNumber')
+        elif self.__group_code == 'onlinesalespo':
+            self.__log("Processing data from online sales bigquery table...", level="info")
+            bq_table = self.__get_bigquery_data('int_online_sales_data')
+            header_table, detail_table = self.__format_onlinesalespo_data(bq_table)
 
-            if self.__group_code in ('customerpoul', 'customerra'):
-                header_table = self.__get_bigquery_data(bq_header_table_name)
-                detail_table = self.__get_bigquery_data(bq_detail_table_name)
+        header_empty = not isinstance(header_table, pandas.DataFrame) or header_table.empty
+        detail_empty = not isinstance(detail_table, pandas.DataFrame) or detail_table.empty
+        if header_empty and detail_empty:
+            self.__log("No data fetched from BigQuery. Exiting process.", level="info")
+            return {"status": "success", "message": "No new data to process."}
 
-            elif self.__group_code == 'onlinesalespo':
-                self.__log("Processing data from online sales bigquery table...", level="info")
-                bq_table = self.__get_bigquery_data('int_online_sales_data')
-                header_table, detail_table = self.__format_onlinesalespo_data(bq_table)
+        self.__log("Renaming columns to match MSSQL schema...", level="info")
+        header_table = self.__rename_columns(mssql_header_table_name.lower(), header_table)
+        detail_table = self.__rename_columns(mssql_detail_table_name.lower(), detail_table)
 
-            header_empty = not isinstance(header_table, pandas.DataFrame) or header_table.empty
-            detail_empty = not isinstance(detail_table, pandas.DataFrame) or detail_table.empty
-            if header_empty and detail_empty:
-                self.__log("No data fetched from BigQuery. Exiting process.", level="info")
-                return {"status": "success", "message": "No new data to process."}
-
-            self.__log("Renaming columns to match MSSQL schema...", level="info")
-            header_table = self.__rename_columns(mssql_header_table_name.lower(), header_table)
-            detail_table = self.__rename_columns(mssql_detail_table_name.lower(), detail_table)
-
-            return self.__insert_dataframes(
-                header_table, detail_table, mssql_header_table_name, mssql_detail_table_name,
-                main_key, trigger_so_import=(self.__group_code == 'customerpoul'),
-            )
-        finally:
-            self.__release_run_lock()
+        return self.__insert_dataframes(
+            header_table, detail_table, mssql_header_table_name, mssql_detail_table_name,
+            main_key, trigger_so_import=(self.__group_code == 'customerpoul'),
+        )
 
     def __insert_dataframes(self, header_table, detail_table, mssql_header_table_name,
                              mssql_detail_table_name, main_key, trigger_so_import=True):
@@ -712,22 +639,10 @@ class BigqueryBridge(object):
 
         header_table = self.__rename_columns('customerpoulbq', header_df)
         detail_table = self.__rename_columns('customerpouldetailbq', detail_df)
-
-        if not self.__acquire_run_lock():
-            self.__log(
-                f"Could not acquire run lock for group_code '{self.__group_code}' "
-                f"(another run held it for the full wait window) -- skipping this "
-                f"manual insert.",
-                level="warning",
-            )
-            return {"status": "skipped", "message": "Another run is already in progress for this group_code."}
-        try:
-            return self.__insert_dataframes(
-                header_table, detail_table, 'CustomerPOULBQ', 'CustomerPOULDetailBQ',
-                main_key='poRefNumber', trigger_so_import=False,
-            )
-        finally:
-            self.__release_run_lock()
+        return self.__insert_dataframes(
+            header_table, detail_table, 'CustomerPOULBQ', 'CustomerPOULDetailBQ',
+            main_key='poRefNumber', trigger_so_import=False,
+        )
 
 if __name__ == "__main__":
     # For local testing
