@@ -38,3 +38,17 @@ smtp_password = os.getenv("SMTP_PASSWORD", "")
 
 # Pub/Sub — POUL Sales Order import trigger
 pubsub_poul_so_topic = os.getenv("PUBSUB_POUL_SO_TOPIC", "")
+
+# Cloud Tasks — debounces bursts of Eventarc-triggered /handoff/runbridge/ calls
+# (a single Document AI batch/BigQuery insert burst can fire it several times
+# concurrently) into one delayed call per group_code.
+cloud_tasks_project_id = os.getenv("CLOUD_TASKS_PROJECT_ID", bigquery_project_id)
+cloud_tasks_location = os.getenv("CLOUD_TASKS_LOCATION", "asia-southeast1")
+cloud_tasks_queue = os.getenv("CLOUD_TASKS_QUEUE", "rgmc-bridge-debounce")
+runbridge_debounce_seconds = int(os.getenv("RUNBRIDGE_DEBOUNCE_SECONDS", "30"))
+runbridge_service_url = os.getenv(
+    "RUNBRIDGE_SERVICE_URL", "https://rgmc-gcp-api-935246372408.asia-southeast1.run.app"
+)
+runbridge_invoker_service_account = os.getenv(
+    "RUNBRIDGE_INVOKER_SERVICE_ACCOUNT", "935246372408-compute@developer.gserviceaccount.com"
+)
