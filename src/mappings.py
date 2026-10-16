@@ -272,7 +272,8 @@ money_columns = {
                 'unit_amount',
                 'net_amount',
                 'net_price',
-                'net_price_pcs'
+                'net_price_pcs',
+                'discount_percent'
         ],
         'onlinesalespo': [
                 'unitPrice',
