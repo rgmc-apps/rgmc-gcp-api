@@ -197,8 +197,8 @@ async def list_upload_dashboard_files(
         None, description="Comma-separated, already-uppercased company-name substrings to match "
                            "(po only — int_document_ai_ra/_ra_xml have no company_name column at all)",
     ),
-    date_from: Optional[str] = Query(None, description="created_at >= this date (YYYY-MM-DD)"),
-    date_to: Optional[str] = Query(None, description="created_at <= this date (YYYY-MM-DD), inclusive"),
+    date_from: Optional[str] = Query(None, description="created_at >= this DATETIME (YYYY-MM-DDTHH:MM:SS) — caller sends the day's start, 00:00:00"),
+    date_to: Optional[str] = Query(None, description="created_at <= this DATETIME (YYYY-MM-DDTHH:MM:SS) — caller sends the day's end, 23:59:59, so the whole day is included"),
     limit: int = Query(500, ge=1, le=5000),
 ):
     tables = UPLOAD_TYPE_TABLES.get(upload_type)
@@ -226,11 +226,17 @@ async def list_upload_dashboard_files(
                 "parameterValue": {"arrayValues": [{"value": r} for r in refs]},
             })
     if date_from:
+        # DATETIME, not DATE: created_at is itself a BigQuery DATETIME column (confirmed
+        # via `bq show`), and comparing it to a bare DATE value casts date_to down to
+        # midnight at the START of that day -- silently excluding every record from
+        # later the same day. The caller (sbic-manual-trigger-page) now sends full
+        # "YYYY-MM-DDTHH:MM:SS" boundaries (00:00:00 / 23:59:59) instead of relying on
+        # that implicit cast.
         conditions.append("created_at >= @date_from")
-        params.append({"name": "date_from", "parameterType": {"type": "DATE"}, "parameterValue": {"value": date_from}})
+        params.append({"name": "date_from", "parameterType": {"type": "DATETIME"}, "parameterValue": {"value": date_from}})
     if date_to:
         conditions.append("created_at <= @date_to")
-        params.append({"name": "date_to", "parameterType": {"type": "DATE"}, "parameterValue": {"value": date_to}})
+        params.append({"name": "date_to", "parameterType": {"type": "DATETIME"}, "parameterValue": {"value": date_to}})
     if company_terms:
         terms = [t.strip().upper() for t in company_terms.split(",") if t.strip()]
         if terms:
