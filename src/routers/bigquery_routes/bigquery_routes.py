@@ -189,6 +189,10 @@ async def get_latest(
 )
 async def list_upload_dashboard_files(
     upload_type: str = Query(..., description="po, ra, or ra_xml"),
+    ref_values: Optional[str] = Query(
+        None, description="Comma-separated exact PO/RA ref numbers — restricts results to files "
+                           "containing ANY of these refs (matched against UPLOAD_TYPE_TABLES[upload_type]['ref_column'])",
+    ),
     company_terms: Optional[str] = Query(
         None, description="Comma-separated, already-uppercased company-name substrings to match "
                            "(po only — int_document_ai_ra/_ra_xml have no company_name column at all)",
@@ -212,6 +216,15 @@ async def list_upload_dashboard_files(
 
     conditions = []
     params = []
+    if ref_values:
+        refs = [r.strip() for r in ref_values.split(",") if r.strip()]
+        if refs:
+            conditions.append(f"{tables['ref_column']} IN UNNEST(@ref_values)")
+            params.append({
+                "name": "ref_values",
+                "parameterType": {"type": "ARRAY", "arrayType": {"type": "STRING"}},
+                "parameterValue": {"arrayValues": [{"value": r} for r in refs]},
+            })
     if date_from:
         conditions.append("created_at >= @date_from")
         params.append({"name": "date_from", "parameterType": {"type": "DATE"}, "parameterValue": {"value": date_from}})
