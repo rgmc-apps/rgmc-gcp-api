@@ -1,7 +1,7 @@
 import os
 import threading
 import time
-import pandas_gbq
+from src.services.bq_read import read_gbq_with_timeout
 import src.config as config
 import src.db.dbconn as dbconn
 from fastapi import FastAPI, Request
@@ -194,7 +194,7 @@ def check_bigquery():
     try:
         query = "SELECT * FROM `{}.int_document_ai_detail` LIMIT 10".format(config.bigquery_dataset_id)
                 
-        df = pandas_gbq.read_gbq(
+        df = read_gbq_with_timeout(
             query,
             project_id=config.bigquery_project_id,
             dialect='standard'

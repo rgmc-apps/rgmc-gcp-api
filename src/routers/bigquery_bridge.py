@@ -2,13 +2,13 @@
 import json
 import math
 import pandas
-import pandas_gbq
 import re
 import time
 import src.mappings as mappings
 import src.config as config
 import src.services.send_mail as send_mail
 from src.db.dbconn import DbConn
+from src.services.bq_read import read_gbq_with_timeout
 
 from sqlalchemy.exc import IntegrityError
 from datetime import timedelta, datetime
@@ -106,7 +106,7 @@ class BigqueryBridge(object):
                 if self.__last_run_timestamp:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp}'"
                 
-                df = pandas_gbq.read_gbq(
+                df = read_gbq_with_timeout(
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
@@ -119,7 +119,7 @@ class BigqueryBridge(object):
                 if self.__last_run_timestamp_detail:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp_detail}'"
                 
-                df = pandas_gbq.read_gbq(
+                df = read_gbq_with_timeout(
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
@@ -133,7 +133,7 @@ class BigqueryBridge(object):
                 if self.__last_run_timestamp:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp}'"
 
-                df = pandas_gbq.read_gbq(
+                df = read_gbq_with_timeout(
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
@@ -146,7 +146,7 @@ class BigqueryBridge(object):
                 if self.__last_run_timestamp_detail:
                     query += f" WHERE created_at  > '{self.__last_run_timestamp_detail}'"
 
-                df = pandas_gbq.read_gbq(
+                df = read_gbq_with_timeout(
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
@@ -159,7 +159,7 @@ class BigqueryBridge(object):
                 if self.__last_run_timestamp:
                     query += f" WHERE createdAt  > '{self.__last_run_timestamp}'"
 
-                df = pandas_gbq.read_gbq(
+                df = read_gbq_with_timeout(
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',

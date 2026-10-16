@@ -1,11 +1,11 @@
 """BigQuery direct-read endpoints."""
 import logging
 import re
-import pandas_gbq
 import src.config as config
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from google.cloud import logging as cloud_logging
+from src.services.bq_read import read_gbq_with_timeout
 
 client = cloud_logging.Client()
 client.setup_logging()
@@ -20,7 +20,7 @@ def _run_parameterized(query: str, query_parameters: list) -> "pandas.DataFrame"
     (po_ref_number/customer_name/dates from a web form), so this must never fall back
     to the by_table/value-style raw string formatting used elsewhere in this file."""
     configuration = {"query": {"parameterMode": "NAMED", "queryParameters": query_parameters}} if query_parameters else None
-    return pandas_gbq.read_gbq(
+    return read_gbq_with_timeout(
         query, project_id=config.bigquery_project_id, dialect="standard", configuration=configuration,
     )
 
@@ -83,6 +83,9 @@ async def search_document_ai(
             detail_df = _run_parameterized(detail_query, detail_params)
             details = detail_df.to_dict(orient="records")
         return {"record_count": len(headers), "data": headers, "detail_data": details}
+    except TimeoutError as e:
+        logger.error(f"BigQuery document-ai search timed out: {e}")
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e))
     except Exception as e:
         logger.error(f"BigQuery document-ai search error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -98,8 +101,11 @@ async def get_by_value(
         query = "SELECT * FROM `{}.{}` WHERE {} = '{}'".format(
             config.bigquery_dataset_id, table_name, where_column, where_value
         )
-        df = pandas_gbq.read_gbq(query, project_id=config.bigquery_project_id, dialect="standard")
+        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard")
         return {"record_count": len(df), "data": df.to_dict(orient="records")}
+    except TimeoutError as e:
+        logger.error(f"BigQuery by_table/value timed out (table={table_name}): {e}")
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e))
     except Exception as e:
         logger.error(f"BigQuery query error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -114,8 +120,11 @@ async def get_latest(
         query = "SELECT * FROM `{}.{}` ORDER BY {} DESC LIMIT 100".format(
             config.bigquery_dataset_id, table_name, date_column
         )
-        df = pandas_gbq.read_gbq(query, project_id=config.bigquery_project_id, dialect="standard")
+        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard")
         return {"record_count": len(df), "data": df.to_dict(orient="records")}
+    except TimeoutError as e:
+        logger.error(f"BigQuery by_table/latest timed out (table={table_name}): {e}")
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e))
     except Exception as e:
         logger.error(f"BigQuery query error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
