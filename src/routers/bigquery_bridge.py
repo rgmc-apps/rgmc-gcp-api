@@ -217,7 +217,28 @@ class BigqueryBridge(object):
         return df.rename(columns=column_mapping)
     
     def __trigger_so_import(self, header_table: pandas.DataFrame, detail_table: pandas.DataFrame):
-        """Publish one Pub/Sub message per POUL order whose companyName contains SUNCOAST or SBIC."""
+        """Publish one Pub/Sub message per POUL order whose companyName contains SUNCOAST or
+        SBIC — the only companies this pipeline is allowed to insert into Business Central.
+        Any other company (e.g. Manila Taste Curators / MTC, which has no BC company code
+        configured — see rgmc-gcp-api commit 76d5d04) is deliberately excluded here, not just
+        left unmapped downstream.
+
+        Also holds back (does not publish) any SUNCOAST/SBIC order whose poRefNumber has zero
+        matching rows in this run's detail_table: rgmc-worker-pool's _create_order creates a
+        BC Sales Order header even when it receives an empty `lines` list (a prior, separate
+        design decision — "no longer all-or-nothing"), so a header published with lines=[]
+        silently becomes a real, line-less Sales Order in BC instead of being caught here.
+        Confirmed live 2026-10-16: PO 21721871's first Document AI pass produced a header with
+        correct totals but 0 detail rows; the bridge published it anyway and rgmc-worker-pool
+        created SBSO263901 with 0 lines. A corrected re-extraction with 1 line appeared ~25
+        minutes later under a different file/company tag, but could never reach BC because
+        this filter only fires once, at insert time, with no mechanism to go back and backfill
+        a line onto an order already created. Holding the order back here (rather than
+        creating it empty) leaves its header-less-than-fully-trusted state visible in this
+        log/email instead; once real lines exist in CustomerPOULDetail, a human can backfill
+        via POST /customerpoul/backfill-from-cloudsql (header doesn't exist in BC yet) or
+        .../sync-inserted-orders (header already exists) scoped to that poRefNumber.
+        """
         sep = "-" * 55
 
         try:
@@ -237,12 +258,20 @@ class BigqueryBridge(object):
             )
             return
 
-        mask = header_table['companyName'].astype(str).str.upper().str.contains('SUNCOAST|SBIC', na=False)
+        company_upper = header_table['companyName'].astype(str).str.upper()
+        mask = company_upper.str.contains('SUNCOAST|SBIC', na=False)
         filtered = header_table[mask]
+        excluded = header_table[~mask]
+
         if filtered.empty:
+            excluded_summary = (
+                ", ".join(sorted(excluded['companyName'].astype(str).unique()))
+                if not excluded.empty else "(none)"
+            )
             self.__log_section(
                 f"\n{sep}\nSO IMPORT TRIGGER\n{sep}\n"
-                f"  Status : SKIPPED — no SUNCOAST / SBIC orders in batch\n{sep}"
+                f"  Status   : SKIPPED — no SUNCOAST / SBIC orders in batch\n"
+                f"  Excluded : {len(excluded)} order(s) from non-SBIC compan(ies): {excluded_summary}\n{sep}"
             )
             return
 
@@ -260,6 +289,7 @@ class BigqueryBridge(object):
 
         orders = []
         published_refs: list[tuple[str, str]] = []
+        held_back_refs: list[tuple[str, str]] = []
         for _, hrow in filtered.iterrows():
             header_dict = {k: _serializable(v) for k, v in hrow.to_dict().items()}
             po_ref = str(hrow.get('poRefNumber', '(unknown)'))
@@ -278,17 +308,38 @@ class BigqueryBridge(object):
                 for row in detail_table[detail_mask].to_dict(orient='records')
             ]
 
+            if not lines:
+                held_back_refs.append((po_ref, company_name))
+                continue
+
             orders.append({"header": header_dict, "lines": lines})
             published_refs.append((po_ref, company_name))
+
+        trigger_lines = [f"\n{sep}", "SO IMPORT TRIGGER", sep]
+
+        if not excluded.empty:
+            excluded_summary = ", ".join(sorted(excluded['companyName'].astype(str).unique()))
+            trigger_lines.append(f"  Excluded (non-SBIC/Suncoast) : {len(excluded)} order(s) — {excluded_summary}")
+
+        if held_back_refs:
+            trigger_lines.append(
+                f"  Held back (0 line items extracted yet) : {len(held_back_refs)} order(s) — "
+                f"NOT inserted into BC; re-run once CustomerPOULDetail has lines for these refs"
+            )
+            for po_ref, co in held_back_refs:
+                trigger_lines.append(f"    - {po_ref}  [{co}]")
+
+        if not orders:
+            trigger_lines.append(f"  Status : SKIPPED — every SBIC/Suncoast order in this batch was held back")
+            trigger_lines.append(sep)
+            self.__log_section("\n".join(trigger_lines))
+            return
 
         # Publish ONE batch message containing all orders
         payload = {"type": "poul-so-import-batch", "orders": orders}
         publisher.publish(topic_path, json.dumps(payload).encode('utf-8'))
 
-        trigger_lines = [
-            f"\n{sep}",
-            "SO IMPORT TRIGGER",
-            sep,
+        trigger_lines += [
             f"  Status : TRIGGERED",
             f"  Topic  : {topic}",
             f"  Sent   : 1 batch message ({len(published_refs)} order(s))",
