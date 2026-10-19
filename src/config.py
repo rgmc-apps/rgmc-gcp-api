@@ -39,6 +39,14 @@ smtp_password = os.getenv("SMTP_PASSWORD", "")
 # Pub/Sub — POUL Sales Order import trigger
 pubsub_poul_so_topic = os.getenv("PUBSUB_POUL_SO_TOPIC", "")
 
+# Pub/Sub — BigQuery bridge run requests. /handoff/runbridge/, /customerpoul/runbridge/
+# (+ onlinesalespo), and /customerra/runbridge/ all publish here instead of running
+# BigqueryBridge.main() inline -- the actual BigQuery-read + MSSQL-write work now
+# happens in rgmc-worker-pool's Pub/Sub pull worker (src/workers/bigquery_bridge_worker.py),
+# so a slow run no longer ties up this service's HTTP request/instance. See this repo's
+# handoff.md ("Move bigquery_bridge heavy work to worker pool") for the full rationale.
+pubsub_bridge_run_topic = os.getenv("PUBSUB_BRIDGE_RUN_TOPIC", "")
+
 # Cloud Tasks — debounces bursts of Eventarc-triggered /handoff/runbridge/ calls
 # (a single Document AI batch/BigQuery insert burst can fire it several times
 # concurrently) into one delayed call per group_code.

@@ -6,10 +6,10 @@ from google.cloud import logging as cloud_logging
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
 from fastapi import HTTPException, Query, Request, status, APIRouter, Depends
-from src.routers.bigquery_bridge import BigqueryBridge
 from src.config import pass_key
 import src.config as config
 from src.routers.sbic_routes.rate_limiter import rate_limit
+from src.services.bridge_trigger import publish_bridge_run
 
 # Instantiate a Cloud Logging client
 client = cloud_logging.Client()
@@ -25,18 +25,13 @@ async def run_handoff_bridge(
     groupcode: str = Query(None, description="Group code override for manual calls"),
     _: None = Depends(rate_limit)
 ):
-    try:
-        if groupcode is None:
-            groupcode = 'customerpoul'
-
-        bridge = BigqueryBridge(logger, method, group_code=groupcode)
-        result = bridge.main()
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[handoff] error running BigQuery bridge: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    """Publishes a bridge-run request instead of running BigqueryBridge.main() inline
+    -- see src/services/bridge_trigger.py for why. rate_limit stays here as cheap
+    defense-in-depth against a misbehaving trigger spamming publishes; the real
+    mutual exclusion now lives in rgmc-worker-pool's FlowControl(max_messages=1)."""
+    if groupcode is None:
+        groupcode = 'customerpoul'
+    return publish_bridge_run(groupcode, method)
 
 
 @handoff_router.post("/runbridge/debounce/")

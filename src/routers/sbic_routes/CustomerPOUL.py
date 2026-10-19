@@ -11,6 +11,7 @@ from src.config import pass_key
 from src.routers.sbic_routes.rate_limiter import rate_limit
 from src.routers.sbic_routes._db import run_query
 from src.services.bc_functions import call_bc_table, call_rgmc_table
+from src.services.bridge_trigger import publish_bridge_run
 from src.services.fuzzy_match import DEFAULT_THRESHOLD, best_matches
 
 # Instantiate a Cloud Logging client
@@ -87,24 +88,19 @@ async def insert_from_bigquery(
 
 @customerpoul_router.post("/runbridge/")
 async def run_customerpoul_bridge(request: Request, method: str = 'manual'):
-    try:
-        bridge = BigqueryBridge(logger, method, group_code='customerpoul')
-        result = bridge.main()
-        return result
-    except Exception as e:
-        logger.error(f"Error running BigQuery bridge: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    """Publishes a bridge-run request instead of running BigqueryBridge.main() inline
+    -- see src/services/bridge_trigger.py. Previously this was the Manual Trigger
+    page's synchronous "Run Bridge Now" call; it now returns {"status": "queued", ...}
+    immediately, with the real BigQuery-read + MSSQL-write work (and its own email
+    notification on completion) happening in rgmc-worker-pool instead."""
+    return publish_bridge_run('customerpoul', method)
 
 
 @customerpoul_router.post("/runbridge/onlinesalespo/")
 async def run_online_sales_po_bridge(request: Request, method: str = 'manual'):
-    try:
-        bridge = BigqueryBridge(logger, method, group_code='onlinesalespo')
-        result = bridge.main()
-        return result
-    except Exception as e:
-        logger.error(f"Error running BigQuery bridge: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    """Publishes a bridge-run request instead of running BigqueryBridge.main() inline
+    -- see src/services/bridge_trigger.py and run_customerpoul_bridge above."""
+    return publish_bridge_run('onlinesalespo', method)
 
 
 def _publish_poul_so_message(msg_type: str, extra: dict, notify_name, notify_company, notify_department, notify_email) -> dict:
