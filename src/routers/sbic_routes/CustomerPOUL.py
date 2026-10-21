@@ -326,7 +326,10 @@ def backfill_from_cloudsql(
 
 @customerpoul_router.get("", summary="List CustomerPOUL headers")
 def list_customerpoul(
-    po_ref_number: Optional[str] = Query(None, description="Exact poRefNumber match"),
+    po_ref_number: Optional[str] = Query(
+        None,
+        description="Exact poRefNumber match — comma-separated for a batch lookup of many refs in one call",
+    ),
     customer_name: Optional[str] = Query(None, description="Substring match on customerName"),
     customer_id: Optional[int] = Query(None, description="Exact customerId match"),
     po_status: Optional[str] = Query(None, description="Exact poStatus match"),
@@ -342,8 +345,14 @@ def list_customerpoul(
     conditions: list[str] = []
     params: dict = {}
     if po_ref_number:
-        conditions.append("poRefNumber = :po_ref_number")
-        params["po_ref_number"] = po_ref_number
+        refs = [r.strip() for r in po_ref_number.split(",") if r.strip()]
+        if len(refs) == 1:
+            conditions.append("poRefNumber = :po_ref_number")
+            params["po_ref_number"] = refs[0]
+        else:
+            ref_params = {f"po_ref_number_{i}": r for i, r in enumerate(refs)}
+            conditions.append(f"poRefNumber IN ({', '.join(':' + k for k in ref_params)})")
+            params.update(ref_params)
     if customer_name:
         conditions.append("customerName LIKE :customer_name")
         params["customer_name"] = f"%{customer_name}%"

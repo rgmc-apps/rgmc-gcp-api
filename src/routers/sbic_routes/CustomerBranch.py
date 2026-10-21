@@ -20,7 +20,10 @@ sbic_customer_branch_router = APIRouter(prefix="/sbic/customerbranches", tags=["
 
 @sbic_customer_branch_router.get("", summary="List SBIC Customer Branches")
 def list_sbic_customer_branches(
-    customer_branch_id: Optional[int] = Query(None, description="Exact customerBranchId match"),
+    customer_branch_id: Optional[str] = Query(
+        None,
+        description="Exact customerBranchId match — comma-separated for a batch lookup of many IDs in one call",
+    ),
     customer_id: Optional[int] = Query(None, description="Exact customerId match"),
     lookup_code: Optional[str] = Query(None, description="Substring match on lookUpCode"),
     limit: int = Query(100, ge=1, le=1000),
@@ -28,8 +31,14 @@ def list_sbic_customer_branches(
     conditions: list[str] = []
     params: dict = {}
     if customer_branch_id is not None:
-        conditions.append("customerBranchId = :customer_branch_id")
-        params["customer_branch_id"] = customer_branch_id
+        ids = [i.strip() for i in customer_branch_id.split(",") if i.strip()]
+        if len(ids) == 1:
+            conditions.append("customerBranchId = :customer_branch_id")
+            params["customer_branch_id"] = int(ids[0])
+        else:
+            id_params = {f"customer_branch_id_{i}": int(v) for i, v in enumerate(ids)}
+            conditions.append(f"customerBranchId IN ({', '.join(':' + k for k in id_params)})")
+            params.update(id_params)
     if customer_id is not None:
         conditions.append("customerId = :customer_id")
         params["customer_id"] = customer_id
