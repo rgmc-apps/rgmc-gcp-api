@@ -9,7 +9,7 @@ import src.config as config
 from src.routers.bigquery_bridge import BigqueryBridge
 from src.config import pass_key
 from src.routers.sbic_routes.rate_limiter import rate_limit
-from src.routers.sbic_routes._db import run_query
+from src.routers.sbic_routes._db import run_execute, run_query
 from src.services.bc_functions import call_bc_table, call_rgmc_table
 from src.services.bridge_trigger import publish_bridge_run
 from src.services.fuzzy_match import DEFAULT_THRESHOLD, best_matches
@@ -84,6 +84,43 @@ async def insert_from_bigquery(
     except Exception as e:
         logger.error(f"Error inserting selected BigQuery records into MSSQL: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@customerpoul_router.post(
+    "/cleanup-staging",
+    summary="Delete one PO's rows from CustomerPOULBQ/CustomerPOULDetailBQ (staging only), so a re-insert can re-fire the promotion trigger",
+)
+def cleanup_customerpoul_staging(
+    po_ref_number: str = Query(..., description="Exact poRefNumber to delete from the _BQ staging tables"),
+):
+    """Deletes ONLY from the _BQ staging tables — never CustomerPOUL/CustomerPOULDetail
+    (the tables the AFTER INSERT trigger promotes into, which BC import and everything
+    else actually reads from).
+
+    Exists for the Upload Dashboard's Handoff History "Retrigger (clean up & re-insert)"
+    action: when a po_ref's trigger_status is "not_promoted" — it reached
+    CustomerPOULBQ/CustomerPOULDetailBQ fine, but the trigger never created the
+    matching CustomerPOUL row — simply re-POSTing the same data to
+    /insert-from-bigquery would hit a duplicate-key conflict on the staging table
+    itself; the trigger only fires ON INSERT, never on a row that's already sitting
+    there. Deleting it here first gives the follow-up insert a genuinely fresh INSERT
+    for the trigger to react to.
+
+    Detail deleted before header, matching this bridge's own insert ordering
+    everywhere else (detail must exist before the header's trigger looks for it).
+    """
+    detail_deleted = run_execute(
+        "DELETE FROM CustomerPOULDetailBQ WHERE poRefNumber = :po_ref_number",
+        {"po_ref_number": po_ref_number},
+    )
+    header_deleted = run_execute(
+        "DELETE FROM CustomerPOULBQ WHERE poRefNumber = :po_ref_number",
+        {"po_ref_number": po_ref_number},
+    )
+    return {
+        "status": "success", "po_ref_number": po_ref_number,
+        "detail_rows_deleted": detail_deleted, "header_rows_deleted": header_deleted,
+    }
 
 
 @customerpoul_router.post("/runbridge/")

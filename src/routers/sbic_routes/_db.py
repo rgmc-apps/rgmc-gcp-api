@@ -44,3 +44,32 @@ def run_query(query: str, params: Optional[dict[str, Any]] = None) -> list[dict[
             )
         logger.error(f"[sbic] query error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=err)
+
+
+def run_execute(query: str, params: Optional[dict[str, Any]] = None) -> int:
+    """Execute a write statement (INSERT/UPDATE/DELETE) against sbic_prod and commit,
+    returning the affected row count.
+
+    run_query's conn.execute() alone is NOT enough for a write — this engine's
+    connections aren't autocommit, so a DELETE/UPDATE executed and never committed
+    silently rolls back the moment the connection closes, looking like it succeeded
+    (no exception) while leaving the data untouched. Same access-failure handling as
+    run_query.
+    """
+    try:
+        engine = get_sbic_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text(query), params or {})
+            conn.commit()
+            return result.rowcount
+    except Exception as e:
+        err = str(e)
+        if "Login failed" in err or "Cannot open database" in err:
+            _invalidate_engine()
+            logger.error(f"[sbic] access denied: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied connecting to sbic_prod. Check MSSQL credentials/permissions.",
+            )
+        logger.error(f"[sbic] execute error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=err)
