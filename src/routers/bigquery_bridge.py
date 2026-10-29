@@ -116,12 +116,20 @@ class BigqueryBridge(object):
     def __get_bigquery_data(self, table_name):
         """Get data from BigQuery based on the last run timestamp.
 
-        timeout=120 on every read_gbq_with_timeout call below, not the 60s module
-        default — confirmed live (2026-10-29) that EVERY automated customerpoul bridge
-        run was failing with "BigQuery read timed out after 60s" on this exact call
-        (the header fetch alone routinely took close to a minute), silently stopping
-        all new PO handoffs for hours. A longer ceiling only matters when a read is
-        already this slow — it costs nothing on a fast, successful one.
+        timeout=300, not the 60s module default (first raised to 120 earlier today,
+        which still wasn't enough — see below). Confirmed live (2026-10-29):
+        int_document_ai/int_document_ai_detail are dbt VIEWS, not materialized
+        tables, and int_document_ai_detail's definition applies FIRST_VALUE() OVER
+        (... ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) window
+        functions plus a QUALIFY ROW_NUMBER() dedup — BigQuery cannot push our
+        `WHERE created_at > X` filter into a view like that, so EVERY read here
+        re-executes the full transformation over ALL historical staging data before
+        filtering, regardless of how little is actually new. This cost only grows as
+        more documents accumulate, and no timeout value fixes it durably — this is a
+        stopgap to buy time, not a real fix. The real fix is materializing these
+        views as (ideally incremental) dbt tables, which is outside this repo and
+        rgmc-worker-pool entirely — it lives in the separate dbt project built by the
+        dbt-github CI service account. Flag to whoever owns that project.
         """
         try:
             if table_name == 'DocumentAIBQ':
@@ -134,7 +142,7 @@ class BigqueryBridge(object):
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
-                    timeout=120,
+                    timeout=300,
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
@@ -148,7 +156,7 @@ class BigqueryBridge(object):
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
-                    timeout=120,
+                    timeout=300,
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
@@ -163,7 +171,7 @@ class BigqueryBridge(object):
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
-                    timeout=120,
+                    timeout=300,
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
@@ -177,7 +185,7 @@ class BigqueryBridge(object):
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
-                    timeout=120,
+                    timeout=300,
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
@@ -191,7 +199,7 @@ class BigqueryBridge(object):
                     query,
                     project_id=config.bigquery_project_id,
                     dialect='standard',
-                    timeout=120,
+                    timeout=300,
                 )
                 self.__log(f"Fetched {len(df)} records from BigQuery.", level="info")
                 return df
