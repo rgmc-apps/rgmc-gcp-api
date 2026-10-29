@@ -69,6 +69,18 @@ class BigqueryBridge(object):
                         self.__last_run_timestamp_detail = result.scalar()
                         if self.__last_run_timestamp_detail:
                             self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
+                        elif self.__last_run_timestamp:
+                            # CustomerPOULDetailBQ has no rows right now (e.g. after a
+                            # cleanup-staging run leaves it empty) — MAX(createdAt) comes
+                            # back NULL, which __get_bigquery_data reads as "no watermark,
+                            # don't filter at all": an unbounded SELECT * over
+                            # int_document_ai_detail's entire history. Confirmed live
+                            # (2026-10-29, mirrored from rgmc-worker-pool's copy of this
+                            # bridge) that this unbounded fetch is what times out at the
+                            # 60s BigQuery read cap. Falling back to the header table's
+                            # own watermark keeps the detail fetch bounded to "new since
+                            # the last run" instead of "everything ever".
+                            self.__last_run_timestamp_detail = self.__last_run_timestamp
                     elif self.__group_code == 'customerra':
                         result = connection.execute(
                             text("SELECT MAX(createdAt) FROM CustomerRABQ")
@@ -86,6 +98,10 @@ class BigqueryBridge(object):
 
                         if self.__last_run_timestamp_detail:
                             self.__last_run_timestamp_detail = self.__last_run_timestamp_detail + timedelta(seconds=1)
+                        elif self.__last_run_timestamp:
+                            # Same fallback as the customerpoul branch above — see its
+                            # comment.
+                            self.__last_run_timestamp_detail = self.__last_run_timestamp
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
