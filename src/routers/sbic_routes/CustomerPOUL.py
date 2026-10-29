@@ -308,6 +308,53 @@ def apply_shipto_fixes(
 
 
 @customerpoul_router.post(
+    "/retrigger-file",
+    summary="Cleanup + re-insert every PO under one uploaded BigQuery file_name (async, via the worker pool)",
+    dependencies=[Depends(rate_limit)],
+)
+def retrigger_file(
+    file_name: Optional[str] = Query(None, description="Exact BigQuery int_document_ai file_name — every PO under it is retriggered"),
+    po_ref_numbers: Optional[str] = Query(None, description="Comma-separated exact poRefNumber values, instead of file_name"),
+    notify_name: Optional[str] = Query(None, description="Employee name to notify with the retrigger result"),
+    notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
+    notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
+    notify_email: Optional[str] = Query(None, description="Employee email to CC on the retrigger result emails"),
+):
+    """Publish a poul-so-retrigger-file message to the same Pub/Sub topic the POUL SO
+    import worker already subscribes to. The worker resolves every PO ref under
+    file_name (or uses po_ref_numbers directly), then re-fetches each one's current
+    BigQuery row and runs the same cleanup-staging + insert-from-bigquery + trigger-
+    promotion-check sequence as this router's own /cleanup-staging and
+    /insert-from-bigquery — the Upload Dashboard's Handoff History/Search tabs'
+    "Retrigger Handoff (cleanup & re-insert all)" / "Retrigger whole file" buttons.
+
+    Moved off this service's own request path — confirmed live (2026-10-29) that
+    resolving + re-fetching every PO under a large uploaded file can take several
+    minutes, well past any reasonable HTTP request deadline. rgmc-worker-pool has no
+    such deadline.
+
+    Same run_id/notify tracking as /reprocess-buffer — poll rgmc-bc-api's
+    GET /bc/custom/v2/so-buffer/reprocess-status/{run_id} for progress and the final
+    per-PO results (in the finished doc's `summary.results`).
+    """
+    if not file_name and not po_ref_numbers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Give file_name or po_ref_numbers")
+    po_ref_list = [p.strip() for p in po_ref_numbers.split(",") if p.strip()] if po_ref_numbers else None
+    extra: dict = {}
+    if file_name:
+        extra["file_name"] = file_name
+    if po_ref_list:
+        extra["po_ref_numbers"] = po_ref_list
+    result = _publish_poul_so_message(
+        "poul-so-retrigger-file", extra,
+        notify_name, notify_company, notify_department, notify_email,
+    )
+    result["file_name"] = file_name
+    result["po_ref_numbers"] = po_ref_list or None
+    return result
+
+
+@customerpoul_router.post(
     "/backfill-from-cloudsql",
     summary="Create missing BC sales orders from Cloud SQL CustomerPOUL/CustomerPOULDetail",
     dependencies=[Depends(rate_limit)],
