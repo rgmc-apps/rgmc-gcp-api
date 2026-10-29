@@ -68,13 +68,21 @@ def _get_signing_credentials():
     )
 
 
-def _run_parameterized(query: str, query_parameters: list) -> "pandas.DataFrame":
+def _run_parameterized(query: str, query_parameters: list, timeout: float = 120) -> "pandas.DataFrame":
     """read_gbq with NAMED query parameters — every WHERE value here is user-supplied
     (po_ref_number/customer_name/dates from a web form), so this must never fall back
-    to the by_table/value-style raw string formatting used elsewhere in this file."""
+    to the by_table/value-style raw string formatting used elsewhere in this file.
+
+    timeout=120, not read_gbq_with_timeout's own BQ_READ_TIMEOUT_SECONDS default (60) —
+    confirmed live (2026-10-29) that a multi-PO document-ai/search lookup (e.g. every
+    PO under one large uploaded file, for the Upload Dashboard's "Retrigger Handoff"
+    batch action) can genuinely take longer than 60s against int_document_ai_detail's
+    current size. A longer ceiling only matters when a query is already this slow —
+    it costs nothing on the fast, common case."""
     configuration = {"query": {"parameterMode": "NAMED", "queryParameters": query_parameters}} if query_parameters else None
     return read_gbq_with_timeout(
         query, project_id=config.bigquery_project_id, dialect="standard", configuration=configuration,
+        timeout=timeout,
     )
 
 
@@ -154,7 +162,10 @@ async def get_by_value(
         query = "SELECT * FROM `{}.{}` WHERE {} = '{}'".format(
             config.bigquery_dataset_id, table_name, where_column, where_value
         )
-        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard")
+        # timeout=120, not the default 60 — see _run_parameterized's comment above on
+        # this same class of slow lookup (e.g. every row under one large uploaded
+        # file_name).
+        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard", timeout=120)
         return {"record_count": len(df), "data": df.to_dict(orient="records")}
     except TimeoutError as e:
         logger.error(f"BigQuery by_table/value timed out (table={table_name}): {e}")
