@@ -368,6 +368,9 @@ def backfill_from_cloudsql(
     ),
     date_from: Optional[str] = Query(None, description="Only CustomerPOUL rows with createDate >= this date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Only CustomerPOUL rows with createDate <= this date (YYYY-MM-DD)"),
+    po_ref_numbers: Optional[str] = Query(
+        None, description="Comma-separated exact poRefNumber values to narrow the backfill to (e.g. the specific refs a trigger/retrigger run just touched). Omit to backfill every create_by/date match."
+    ),
     notify_name: Optional[str] = Query(None, description="Employee name to notify with the backfill result"),
     notify_company: Optional[str] = Query(None, description="Employee's company, for the notification email"),
     notify_department: Optional[str] = Query(None, description="Employee's department, for the notification email"),
@@ -390,6 +393,7 @@ def backfill_from_cloudsql(
     GET /bc/custom/v2/so-buffer/reprocess-status/{run_id}.
     """
     company_list = [c.strip().upper() for c in companies.split(",") if c.strip()] if companies else None
+    po_ref_list = [p.strip() for p in po_ref_numbers.split(",") if p.strip()] if po_ref_numbers else None
     extra = {"create_by": create_by}
     if company_list:
         extra["companies"] = company_list
@@ -397,6 +401,8 @@ def backfill_from_cloudsql(
         extra["date_from"] = date_from
     if date_to:
         extra["date_to"] = date_to
+    if po_ref_list:
+        extra["po_ref_numbers"] = po_ref_list
     result = _publish_poul_so_message(
         "poul-so-backfill-from-cloudsql", extra,
         notify_name, notify_company, notify_department, notify_email,
@@ -405,6 +411,7 @@ def backfill_from_cloudsql(
     result["create_by"] = create_by
     result["date_from"] = date_from
     result["date_to"] = date_to
+    result["po_ref_numbers"] = po_ref_list or "all"
     return result
 
 
