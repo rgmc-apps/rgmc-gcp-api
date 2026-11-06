@@ -7,6 +7,12 @@ from src.config import BC_CLIENT_ID, BC_TENANT_ID, BC_CLIENT_SECRET, BC_SCOPE, B
 
 _BC_BASE = "https://api.businesscentral.dynamics.com/v2.0"
 
+# Every requests.* call in this file had no timeout at all until now — a hung/slow BC
+# response would block the calling HTTP request indefinitely (same failure shape as the
+# BigQuery-view incident this was added alongside, just a different downstream).
+_REQUEST_TIMEOUT = 30
+_PAGE_FETCH_TIMEOUT = 60  # _fetch_all_pages can follow many pages; a bit more headroom per page
+
 _token_lock = threading.Lock()
 _token_cache: dict = {"token": None, "expires_at": 0.0}
 _company_id_cache: dict = {}
@@ -27,6 +33,7 @@ def get_access_token() -> str:
             BC_AUTH_URL,
             data=payload,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=_REQUEST_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()
@@ -41,7 +48,7 @@ def _auth_headers() -> dict:
 
 def call_business_central_api(endpoint: str):
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/api/v2.0/{endpoint}"
-    response = requests.get(url, headers=_auth_headers())
+    response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json()
 
 
@@ -65,7 +72,7 @@ def _fetch_all_pages(url: str) -> list:
     all_records = []
     while url:
         print(f"Fetching BC data from: {url}")
-        response = requests.get(url, headers=_auth_headers())
+        response = requests.get(url, headers=_auth_headers(), timeout=_PAGE_FETCH_TIMEOUT)
         response.raise_for_status()
         data = response.json()
         all_records.extend(data.get("value", []))
@@ -97,7 +104,7 @@ def bc_get_record(table_endpoint: str, record_id: str, company_name: str = None)
     """GET a single record by GUID from a company-scoped BC table."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/api/v2.0/companies({company_id})/{table_endpoint}({record_id})"
-    response = requests.get(url, headers=_auth_headers())
+    response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json()
 
 
@@ -106,7 +113,7 @@ def bc_create_record(table_endpoint: str, payload: dict, company_name: str = Non
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/api/v2.0/companies({company_id})/{table_endpoint}"
     headers = {**_auth_headers(), "Content-Type": "application/json"}
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json()
 
 
@@ -115,7 +122,7 @@ def bc_update_record(table_endpoint: str, record_id: str, payload: dict, company
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/api/v2.0/companies({company_id})/{table_endpoint}({record_id})"
     headers = {**_auth_headers(), "Content-Type": "application/json", "If-Match": "*"}
-    response = requests.patch(url, json=payload, headers=headers)
+    response = requests.patch(url, json=payload, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json() if response.content else {}
 
 
@@ -123,7 +130,7 @@ def bc_delete_record(table_endpoint: str, record_id: str, company_name: str = No
     """DELETE a record from a company-scoped BC table."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/api/v2.0/companies({company_id})/{table_endpoint}({record_id})"
-    response = requests.delete(url, headers=_auth_headers())
+    response = requests.delete(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code
 
 
@@ -159,7 +166,7 @@ def rgmc_get_record(table_endpoint: str, record_id: str, company_name: str = Non
     """GET a single record by GUID from a RGMC custom API table."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}({record_id})"
-    response = requests.get(url, headers=_auth_headers())
+    response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json()
 
 
@@ -168,7 +175,7 @@ def rgmc_create_record(table_endpoint: str, payload: dict, company_name: str = N
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}"
     headers = {**_auth_headers(), "Content-Type": "application/json"}
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, _safe_json(response)
 
 
@@ -177,7 +184,7 @@ def rgmc_update_record(table_endpoint: str, record_id: str, payload: dict, compa
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}({record_id})"
     headers = {**_auth_headers(), "Content-Type": "application/json", "If-Match": "*"}
-    response = requests.patch(url, json=payload, headers=headers)
+    response = requests.patch(url, json=payload, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, response.json() if response.content else {}
 
 
@@ -185,7 +192,7 @@ def rgmc_delete_record(table_endpoint: str, record_id: str, company_name: str = 
     """DELETE a record from a RGMC custom API table."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/{table_endpoint}({record_id})"
-    response = requests.delete(url, headers=_auth_headers())
+    response = requests.delete(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code
 
 
@@ -203,7 +210,7 @@ def rgmc_get_contact_picture(contact_id: str, company_name: str = None):
     """GET contactPictures({contact_id}) — returns {id, contactNo, picture} where picture is base64."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contactPictures({contact_id})"
-    response = requests.get(url, headers=_auth_headers())
+    response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code, _safe_json(response)
 
 
@@ -212,7 +219,7 @@ def rgmc_update_contact_picture(contact_id: str, picture_base64: str, company_na
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contactPictures({contact_id})"
     headers = {**_auth_headers(), "Content-Type": "application/json", "If-Match": "*"}
-    response = requests.patch(url, json={"picture": picture_base64}, headers=headers)
+    response = requests.patch(url, json={"picture": picture_base64}, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, _safe_json(response)
 
 
@@ -220,7 +227,7 @@ def rgmc_list_contact_brand_tags(contact_id: str, company_name: str = None):
     """GET contacts({contact_id})/contactBrandTags — all brand tags for a contact (Pag50209)."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags"
-    response = requests.get(url, headers=_auth_headers())
+    response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code, _safe_json(response)
 
 
@@ -229,7 +236,7 @@ def rgmc_add_contact_brand_tag(contact_id: str, brand_code: str, company_name: s
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags"
     headers = {**_auth_headers(), "Content-Type": "application/json"}
-    response = requests.post(url, json={"brandCode": brand_code}, headers=headers)
+    response = requests.post(url, json={"brandCode": brand_code}, headers=headers, timeout=_REQUEST_TIMEOUT)
     return response.status_code, _safe_json(response)
 
 
@@ -237,7 +244,7 @@ def rgmc_delete_contact_brand_tag(contact_id: str, tag_id: str, company_name: st
     """DELETE contacts({contact_id})/contactBrandTags({tag_id}) — remove a brand tag (Pag50209)."""
     company_id = get_company_id(company_name)
     url = f"{_BC_BASE}/{BC_TENANT_ID}/{BC_ENVIRONMENT}/{_RGMC_CUSTOM_API}/companies({company_id})/contacts({contact_id})/contactBrandTags({tag_id})"
-    response = requests.delete(url, headers=_auth_headers())
+    response = requests.delete(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
     return response.status_code
 
 
@@ -286,7 +293,7 @@ def rgmc_list_item_prices(
         url += "?" + "&".join(params)
         if top == 1:
             # Fast path for single active-price lookups — one record, no pagination.
-            response = requests.get(url, headers=_auth_headers())
+            response = requests.get(url, headers=_auth_headers(), timeout=_REQUEST_TIMEOUT)
             data = _safe_json(response)
             if response.ok:
                 _item_price_cache[cache_key] = data

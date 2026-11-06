@@ -157,10 +157,16 @@ async def get_by_value(
     table_name: str = Query(...),
     where_column: str = Query(...),
     where_value: str = Query(...),
+    limit: int = Query(1000, ge=1, le=5000),
 ):
     try:
-        query = "SELECT * FROM `{}.{}` WHERE {} = '{}'".format(
-            config.bigquery_dataset_id, table_name, where_column, where_value
+        safe_where_value = where_value.replace("'", "''")
+        # LIMIT added — this was the only route in this file with no row cap at all;
+        # worst case was a full-table scan whose cost scales with however many rows
+        # match, not with anything the caller controls (e.g. a file_name shared by an
+        # unexpectedly large batch).
+        query = "SELECT * FROM `{}.{}` WHERE {} = '{}' LIMIT {}".format(
+            config.bigquery_dataset_id, table_name, where_column, safe_where_value, limit
         )
         # timeout=120, not the default 60 — see _run_parameterized's comment above on
         # this same class of slow lookup (e.g. every row under one large uploaded
@@ -184,7 +190,9 @@ async def get_latest(
         query = "SELECT * FROM `{}.{}` ORDER BY {} DESC LIMIT 100".format(
             config.bigquery_dataset_id, table_name, date_column
         )
-        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard")
+        # timeout=120, matching the other routes in this file against this same class
+        # of slow view — was silently falling back to bq_read.py's 60s default before.
+        df = read_gbq_with_timeout(query, project_id=config.bigquery_project_id, dialect="standard", timeout=120)
         return {"record_count": len(df), "data": df.to_dict(orient="records")}
     except TimeoutError as e:
         logger.error(f"BigQuery by_table/latest timed out (table={table_name}): {e}")

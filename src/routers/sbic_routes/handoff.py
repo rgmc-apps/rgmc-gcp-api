@@ -63,6 +63,7 @@ async def run_handoff_bridge_debounced(
     request: Request,
     method: str = 'triggered',
     groupcode: str = Query(None, description="Group code override"),
+    _: None = Depends(rate_limit),
 ):
     """Eventarc-facing endpoint: instead of calling the bridge directly (several
     Eventarc triggers can fire within the same second for one upload batch -- a

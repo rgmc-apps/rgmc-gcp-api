@@ -501,6 +501,7 @@ def match_shipto(
     company: Optional[str] = Query(None, description="Override BC company (defaults to routing from companyName)"),
     threshold: float = Query(DEFAULT_THRESHOLD, ge=0.0, le=1.0, description="Minimum fuzzy score to include a match"),
     top: int = Query(5, ge=1, le=20, description="Max number of fuzzy candidates to return"),
+    _: None = Depends(rate_limit),
 ):
     header = _get_latest_header(po_ref_number)
     branch_name = header.get("customerBranchName") or ""
@@ -553,6 +554,7 @@ def match_items(
     company: Optional[str] = Query(None, description="Override BC company (defaults to routing from companyName)"),
     threshold: float = Query(DEFAULT_THRESHOLD, ge=0.0, le=1.0, description="Minimum fuzzy score to include a match"),
     top: int = Query(3, ge=1, le=20, description="Max number of fuzzy candidates to return per line"),
+    _: None = Depends(rate_limit),
 ):
     header = _get_latest_header(po_ref_number)
     lines = run_query(

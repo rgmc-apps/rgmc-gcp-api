@@ -129,7 +129,7 @@ def send_mail(body: str, category: str = "Info", method: str = "manual", module:
         msg.set_content(body)
         msg.add_alternative(html_content, subtype="html", charset="utf-8")
         try:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
                 server.starttls(context=ssl.create_default_context())
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
@@ -163,7 +163,7 @@ def send_generic_mail(subject: str, body: str, recipients: list[str] | None = No
         msg.set_content(body)
         msg.add_alternative(html_content, subtype="html", charset="utf-8")
         try:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
                 server.starttls(context=ssl.create_default_context())
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
@@ -208,7 +208,7 @@ def notify_error(method: str, url: str, status_code: int, body: str, client_ip: 
 
     try:
         ctx = ssl.create_default_context()
-        with smtplib.SMTP(config.smtp_host, config.smtp_port) as server:
+        with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as server:
             server.starttls(context=ctx)
             server.login(config.smtp_user, config.smtp_password)
             server.send_message(msg)
